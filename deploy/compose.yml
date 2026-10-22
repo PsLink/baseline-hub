@@ -1,0 +1,67 @@
+name: baseline-hub
+x-hub: &hub
+  build:
+    context: ..
+    dockerfile: deploy/Dockerfile.backend
+  environment: &hub-environment
+    HUB_DATABASE_URL: postgresql+psycopg://hub:${HUB_DB_PASSWORD:?Set HUB_DB_PASSWORD}@db:5432/hub
+    HUB_PUBLIC_URL: ${HUB_PUBLIC_URL:?Set HUB_PUBLIC_URL}
+    HUB_COOKIE_SECURE: ${HUB_COOKIE_SECURE:-true}
+    HUB_UPSTREAM_URL: ${HUB_UPSTREAM_URL:?Set HUB_UPSTREAM_URL}
+    HUB_UPSTREAM_PROXY: ${HUB_UPSTREAM_PROXY:-}
+    HUB_GITHUB_CLIENT_ID: ${HUB_GITHUB_CLIENT_ID:-}
+    HUB_GITHUB_CLIENT_SECRET: ${HUB_GITHUB_CLIENT_SECRET:-}
+    HUB_CREDENTIAL_KEY: ${HUB_CREDENTIAL_KEY:-}
+    HUB_CATALOG_REPOSITORY: ${HUB_CATALOG_REPOSITORY:-PsLink/model-catalog}
+  restart: unless-stopped
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: hub
+      POSTGRES_USER: hub
+      POSTGRES_PASSWORD: ${HUB_DB_PASSWORD:?Set HUB_DB_PASSWORD}
+    volumes:
+      - hub-db:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U hub -d hub']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+  migrate:
+    <<: *hub
+    command: [alembic, upgrade, head]
+    restart: 'no'
+    depends_on:
+      db:
+        condition: service_healthy
+  api:
+    <<: *hub
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD, python, -c, 'import urllib.request; urllib.request.urlopen("http://localhost:8000/api/health", timeout=3)']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+  publisher:
+    <<: *hub
+    command: [python, -m, baseline_hub.publishing]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+  frontend:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.frontend
+    ports:
+      - '${HUB_PORT:-8080}:80'
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+volumes:
+  hub-db:

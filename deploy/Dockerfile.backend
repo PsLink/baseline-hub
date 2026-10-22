@@ -1,0 +1,10 @@
+FROM python:3.12-slim
+WORKDIR /srv/hub
+COPY backend/pyproject.toml ./
+COPY backend/baseline_hub ./baseline_hub
+RUN pip install --no-cache-dir . && useradd --create-home hub
+COPY backend/alembic.ini ./
+COPY backend/alembic ./alembic
+USER hub
+EXPOSE 8000
+CMD ["uvicorn", "baseline_hub.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]

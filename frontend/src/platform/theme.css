@@ -1,0 +1,106 @@
+/* Neutral surfaces and a restrained teal accent keep results legible. */
+:root {
+  --el-color-primary: #087f78;
+  --el-color-success: #26754f;
+  --el-color-warning: #956214;
+  --el-color-danger: #b43d3d;
+  --el-color-primary-dark-2: #06665f;
+  --el-color-primary-light-3: #529f99;
+  --el-color-primary-light-5: #83bfba;
+  --el-color-primary-light-7: #b5d9d6;
+  --el-color-primary-light-8: #cee5e3;
+  --el-color-primary-light-9: #e7f2f1;
+  --autotune-bg: #f6f8fa;
+  --autotune-text: #24333b;
+  --autotune-muted: #5f707a;
+  --autotune-border: #dde5e9;
+  --el-border-color: #dde5e9;
+  --el-font-size-base: 14px;
+  --el-border-radius-base: 6px;
+  --el-text-color-primary: #24333b;
+}
+
+body {
+  margin: 0;
+  background: var(--autotune-bg);
+  color: var(--autotune-text);
+  font-family: 'IBM Plex Sans', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.page {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 32px;
+}
+
+.page-title {
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -.025em;
+  margin: 0 0 10px;
+}
+
+.muted {
+  color: var(--autotune-muted);
+  font-size: 13px;
+}
+
+.mono {
+  font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 12px;
+}
+
+/* A campaign that was never started. Element Plus has no tag colour between
+   "in progress" and "finished", and grey for both made a draft indistinguish-
+   able from a completed night. */
+.el-tag.tag-draft {
+  --el-tag-bg-color: #eff6ff;
+  --el-tag-border-color: #bfdbfe;
+  --el-tag-text-color: #1d4ed8;
+}
+
+/* An in-app link that used to be a bare click handler (a name in a table, a
+   card title, a campaign reference). It is a real <a href> now so a middle-
+   click or Ctrl/Cmd+click opens a new tab — but it keeps the look of whatever
+   it replaced: no browser link blue, no underline. A scoped colour (e.g. a
+   view's `.link`) still wins over this. */
+a.nav-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* Quiet surfaces keep the benchmark results at the centre of the workspace. */
+
+.el-table { font-variant-numeric: tabular-nums; --el-table-header-bg-color: #f6f8fa; --el-table-row-hover-bg-color: #f0f7f6; }
+.el-table .cell { line-height: 1.6; }
+.el-table th.el-table__cell { font-weight: 500; color: var(--autotune-muted); }
+.el-table td.el-table__cell { padding-top: 14px; padding-bottom: 14px; }
+.el-card { --el-card-padding: 20px; border-radius: 8px; box-shadow: none !important; }
+.el-card__header { border-bottom-color: var(--autotune-border); }
+.el-button { font-weight: 500; }
+.el-tabs__item { font-weight: 500; }
+.disclosure { background: white; border: 1px solid var(--autotune-border); border-radius: 8px; padding: 14px 18px; }
+.disclosure > summary { cursor: pointer; font-size: 14px; font-weight: 500; color: var(--autotune-text); }
+.disclosure-body { padding-top: 18px; overflow-wrap: anywhere; }
+.disclosure[open] > summary { margin-bottom: 10px; }
+:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 3px; }
+@media (max-width: 720px) {
+  .page { padding: 20px 16px; }
+  .page-title { font-size: 23px; }
+  .page .header-row { flex-direction: column; gap: 16px; }
+  .page .actions { flex-wrap: wrap; gap: 8px; }
+  .el-dialog { max-width: calc(100vw - 24px); }
+  .el-drawer { max-width: 100vw; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+/* Keep the submit action available while advanced settings scroll. */
+.hub-dialog { display: flex; flex-direction: column; max-height: 92dvh; margin-bottom: 4vh; }
+.hub-dialog .el-dialog__body { overflow-y: auto; min-height: 0; }
+.hub-dialog .el-dialog__header, .hub-dialog .el-dialog__footer { flex-shrink: 0; }
+.hub-dialog .el-dialog__footer { border-top: 1px solid var(--autotune-border); padding-top: 16px; }
