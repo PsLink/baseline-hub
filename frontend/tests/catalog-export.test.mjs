@@ -39,6 +39,54 @@ function setup(t, { track = false, get, post } = {}) {
   return { flow, props, calls, api, scope, open, settle }
 }
 
+test('a sole owned run defaults to optimized while any board entry can be baseline', async t => {
+  const { flow, props, open } = setup(t, { track: true })
+  props.candidates = [
+    { run_id: 1, label: 'mine', canOptimize: true },
+    { run_id: 2, label: 'other', canOptimize: false },
+    { run_id: 3, label: 'another baseline', canOptimize: false },
+  ]
+  await open()
+  assert.equal(flow.optimizedRun.value, 1)
+  assert.equal(flow.baselineRun.value, 2)
+  assert.equal(flow.ready.value, true)
+  assert.deepEqual(flow.baselineCandidates.value.map(row => row.run_id), [2, 3])
+  assert.deepEqual(flow.optimizedCandidates.value.map(row => row.run_id), [1])
+  flow.baselineRun.value = 3
+  flow.changePair()
+  assert.deepEqual(flow.body().variants.map(row => [row.run_id, row.role]), [
+    [3, 'baseline'], [1, 'optimized'],
+  ])
+})
+
+test('a fixed shared baseline leaves only owned runs available as optimized', async t => {
+  const { flow, props, open } = setup(t, { track: true })
+  props.fixedBaselineRunId = 1
+  props.candidates = [
+    { run_id: 1, label: 'reference', canOptimize: false },
+    { run_id: 2, label: 'mine', canOptimize: true },
+    { run_id: 3, label: 'other', canOptimize: false },
+  ]
+  props.initial = [{ run_id: 3, role: 'optimized' }]
+  await open()
+  assert.equal(flow.baselineRun.value, 1)
+  assert.equal(flow.optimizedRun.value, 2)
+  assert.deepEqual(flow.optimizedCandidates.value.map(row => row.run_id), [2])
+})
+
+test('refresh removes optimized selections that are no longer owned', async t => {
+  const { flow, props, open } = setup(t, { track: true })
+  await open()
+  props.candidates = [
+    { run_id: 1, label: 'baseline', canOptimize: false },
+    { run_id: 2, label: 'no longer mine', canOptimize: false },
+  ]
+  flow.refreshCandidates()
+  assert.equal(flow.optimizedRun.value, null)
+  assert.equal(flow.ready.value, false)
+  assert.deepEqual(flow.optimizedCandidates.value, [])
+})
+
 for (const existing of [true, false]) {
   test(`adopt confirmed HF only when the catalog model exists=${existing}`, async t => {
     const { flow, open } = setup(t, { post: async () => ({ data: document({ existing }) }) })

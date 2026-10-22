@@ -451,10 +451,13 @@ def test_track_export_requires_completed_report_and_html(publisher):
     ("foreign_opt", 403),
     ("shared_reference", 200),
     ("foreign_baseline_without_track", 403),
-    ("foreign_baseline_without_reference", 403),
+    ("foreign_baseline_without_reference", 200),
+    ("foreign_opt_without_reference", 403),
+    ("foreign_baseline_outside_board", 403),
+    ("reference_not_ready", 403),
     ("foreign_reference_as_opt", 403),
 ])
-def test_exports_require_own_results_except_the_tracks_fixed_baseline(
+def test_exports_require_own_results_except_the_tracks_permitted_baseline(
     publisher, endpoint, scenario, expected,
 ):
     client, _, _, state, headers = publisher
@@ -466,12 +469,20 @@ def test_exports_require_own_results_except_the_tracks_fixed_baseline(
         if path in {"/api/runs/5", "/api/runs/6"}:
             return httpx.Response(200, json={"campaign_id": int(path.rsplit("/", 1)[1])})
         if path in {"/api/campaigns/5", "/api/campaigns/6"}:
-            foreign = 6 if scenario == "foreign_opt" else 5
+            foreign = 6 if scenario in {"foreign_opt", "foreign_opt_without_reference"} else 5
             return httpx.Response(200, json={
                 "owner_id": 2 if path.endswith(f"/{foreign}") else 1,
             })
-        if scenario == "foreign_baseline_without_reference" and path.endswith("/tracks/demo"):
-            return httpx.Response(200, json={"board": [{"run_id": 5}, {"run_id": 6}]})
+        if path.endswith("/tracks/demo"):
+            if scenario in {"foreign_baseline_without_reference", "foreign_opt_without_reference"}:
+                return httpx.Response(200, json={"board": [{"run_id": 5}, {"run_id": 6}]})
+            if scenario == "foreign_baseline_outside_board":
+                return httpx.Response(200, json={"board": [{"run_id": 6}]})
+            if scenario == "reference_not_ready":
+                return httpx.Response(200, json={
+                    "reference": {"measurement_id": 99},
+                    "board": [{"run_id": 5}, {"run_id": 6}],
+                })
         return original.handle_request(request)
 
     client.app.state.platform_transport = httpx.MockTransport(remote)
@@ -515,3 +526,30 @@ def test_submit_rejects_foreign_opt_even_when_baseline_is_still_owned(publisher)
     path = ROOT + f"/publications/{reviewed['id']}"
     assert client.post(path + "/submit", headers=headers).status_code == 403
     assert client.get(path).json()["status"] == "preview"
+
+
+@pytest.mark.parametrize("new_reference,expected", [(None, 202), (7, 403)])
+def test_submit_rechecks_a_freely_selected_baseline(publisher, new_reference, expected):
+    client, _, _, _, headers = publisher
+    body = track_export(publisher)
+    original = client.app.state.platform_transport
+    reference = None
+
+    def remote(request):
+        if request.url.path.endswith("/tracks/demo"):
+            return httpx.Response(200, json={"board": [
+                {"run_id": run, "is_reference": run == reference} for run in (5, 6, 7)
+            ]})
+        if request.url.path == "/api/runs/5":
+            return httpx.Response(200, json={"campaign_id": 13})
+        if request.url.path == "/api/campaigns/13":
+            return httpx.Response(200, json={"owner_id": 2})
+        return original.handle_request(request)
+
+    client.app.state.platform_transport = httpx.MockTransport(remote)
+    preview = client.post(ROOT + "/publication-previews", json=body, headers=headers)
+    assert preview.status_code == 200, preview.text
+    reference = new_reference
+    path = ROOT + f"/publications/{preview.json()['id']}"
+    assert client.post(path + "/submit", headers=headers).status_code == expected
+    assert client.get(path).json()["status"] == ("queued" if expected == 202 else "preview")

@@ -11,7 +11,7 @@ from baseline_hub.upstream import call, request_response
 
 
 def check_sources(http, source, linked):
-    """Authorize every run, allowing only the track's confirmed shared baseline."""
+    """Require owned results, allowing the track's permitted comparison baseline."""
     if linked is None:
         raise HTTPException(409, "请连接 AutoTune 账号")
     variants = source.get("variants")
@@ -44,7 +44,11 @@ def check_sources(http, source, linked):
                               if row.get("is_reference")), None)
             if reference and reference.get("run_id") == item["run_id"]:
                 continue
-        raise HTTPException(403, "只能导出自己提交的结果，公共 baseline 仅限管理员指定的对照")
+            if reference is None and not track.get("reference") and any(
+                row.get("run_id") == item["run_id"] for row in track.get("board", [])
+            ):
+                continue
+        raise HTTPException(403, "只能导出本人结果或当前赛道允许的 baseline")
     if not owns:
         raise HTTPException(403, "请至少选择一项自己的测量结果")
     return campaigns

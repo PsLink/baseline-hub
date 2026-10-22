@@ -140,8 +140,8 @@ function leaderValue(track: BaselineTrack): string {
 }
 function leaderCaption(track: BaselineTrack): string {
   return track.ranking_metric.endsWith('tpm_card_norm')
-    ? t('baselineHub.ranOn', { n: track.leader?.gpu_count ?? 0 })
-    : metricLabel(track.ranking_metric, locale.value)
+    ? text(`实测 ${track.leader?.gpu_count ?? 0} 卡`, `Run on ${track.leader?.gpu_count ?? 0} GPUs`)
+    : ''
 }
 
 async function retryBenchmark(track: BaselineTrack) {
@@ -247,7 +247,7 @@ onMounted(async () => {
           <el-checkbox v-model="onlyMine">{{ text('我参与的', 'My tracks') }}</el-checkbox>
           <el-button v-if="hasFilters" text @click="clearFilters">{{ text('清空筛选', 'Clear filters') }}</el-button>
         </div>
-        <p v-if="tracks.length" class="filter-count muted" role="status">{{ text(`显示 ${visibleTracks.length} / ${tracks.length} 个赛道`, `Showing ${visibleTracks.length} of ${tracks.length} tracks`) }}<span class="scope-note">{{ text('各赛道评测口径独立，成绩请在赛道内比较。', 'Compare results within a track; scoring differs across tracks.') }}</span></p>
+        <p v-if="tracks.length" class="filter-count muted" role="status">{{ text(`显示 ${visibleTracks.length} / ${tracks.length} 个赛道`, `Showing ${visibleTracks.length} of ${tracks.length} tracks`) }}<span class="scope-note">{{ text('成绩仅限同赛道比较', 'Compare within each track') }}</span></p>
         </div>
         <PageLoading v-if="!tracks.length && (first.loading || first.error)" :error="first.error"
           @retry="first.run" />
@@ -278,9 +278,12 @@ onMounted(async () => {
             </div>
             <div v-if="track.leader" class="leader">
               <div class="leading-score">{{ leaderValue(track) }}</div>
-              <div class="muted" :title="track.ranking_metric">{{ metricLabel(track.ranking_metric, locale) }}<span v-if="track.ranking_metric.endsWith('tpm_card_norm')"> · {{ text('越高越好', 'Higher is better') }}</span></div>
-              <div class="leading-config"><span class="muted">{{ t('baselineHub.leading') }}</span> <b>{{ track.leader.name }}</b><span v-if="track.leader.version > 1" class="muted"> v{{ track.leader.version }}</span></div>
-              <div class="muted leader-caption">{{ leaderCaption(track) }}</div>
+              <div class="muted" :title="track.ranking_metric">{{ metricLabel(track.ranking_metric, locale, true) }}<span v-if="track.ranking_metric.endsWith('tpm_card_norm')"> · {{ text('越高越好', 'Higher wins') }}</span></div>
+              <div class="leading-config"><span class="muted">{{ text('领先配置', 'Leader') }}</span>
+                <el-tooltip :content="track.leader.name" :trigger="['hover', 'focus', 'click']" placement="top" popper-class="hub-name-tooltip">
+                  <button type="button" class="config-name" @click.stop>{{ track.leader.name }}</button>
+                </el-tooltip><span v-if="track.leader.version > 1" class="muted">v{{ track.leader.version }}</span></div>
+              <div v-if="leaderCaption(track)" class="muted leader-caption">{{ leaderCaption(track) }}</div>
             </div>
             <div v-else class="muted tiny leader">{{ t('baselineHub.noRanked') }}</div>
             <div v-if="track.status === 'draft'" class="warn tiny draft-note">
@@ -330,9 +333,9 @@ onMounted(async () => {
             <template #default="{ row }">
               <template v-if="row.leader">
                 <div class="leading-score">{{ leaderValue(row) }}</div>
-                <div class="muted" :title="row.ranking_metric">{{ metricLabel(row.ranking_metric, locale) }}<span v-if="row.ranking_metric.endsWith('tpm_card_norm')"> · {{ text('越高越好', 'Higher is better') }}</span></div>
-                <div class="leading-config">{{ row.leader.name }}<span v-if="row.leader.version > 1" class="muted"> v{{ row.leader.version }}</span></div>
-                <div class="muted">{{ leaderCaption(row) }}</div>
+                <div class="muted" :title="row.ranking_metric">{{ metricLabel(row.ranking_metric, locale, true) }}<span v-if="row.ranking_metric.endsWith('tpm_card_norm')"> · {{ text('越高越好', 'Higher wins') }}</span></div>
+                <div class="leading-config"><el-tooltip :content="row.leader.name" :trigger="['hover', 'focus', 'click']" placement="top" popper-class="hub-name-tooltip"><button type="button" class="config-name" @click.stop>{{ row.leader.name }}</button></el-tooltip><span v-if="row.leader.version > 1" class="muted">v{{ row.leader.version }}</span></div>
+                <div v-if="leaderCaption(row)" class="muted">{{ leaderCaption(row) }}</div>
               </template>
               <span v-else class="muted">{{ t('baselineHub.noRanked') }}</span>
             </template>
@@ -342,7 +345,7 @@ onMounted(async () => {
           <article v-for="item in visibleTracks" :key="item.id" class="mobile-track">
             <router-link :to="`/baseline-hub/tracks/${item.slug}`" class="nav-link"><b>{{ item.name }}</b></router-link>
             <div class="muted">{{ item.model_name }} · {{ item.gpu_type }}</div>
-            <div v-if="item.leader" class="mobile-leading"><strong>{{ leaderValue(item) }}</strong><span class="muted">{{ leaderCaption(item) }}</span></div>
+            <div v-if="item.leader" class="mobile-leading"><strong>{{ leaderValue(item) }}</strong><span class="muted">{{ metricLabel(item.ranking_metric, locale, true) }}</span><span v-if="leaderCaption(item)" class="muted">{{ leaderCaption(item) }}</span></div>
             <p v-else class="muted">{{ t('baselineHub.noRanked') }}</p>
             <div class="mobile-track-footer"><span class="muted">{{ t('baselineHub.measuredCount', { n: item.measured_count }) }}</span><el-tag v-if="item.status !== 'open'" :type="trackStatusType(item.status)" effect="plain">{{ statusLabel(item.status, locale) }}</el-tag></div>
             <p v-if="item.status === 'draft'" class="warn">{{ item.benchmark_error || t('baselineHub.noBenchmarkYet') }}</p>
@@ -443,7 +446,10 @@ onMounted(async () => {
 .filter-count { margin: 12px 0; display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between; }
 .scope-note { font-size: 13px; }
 .leading-score { font-size: 22px; line-height: 1.35; font-weight: 650; font-variant-numeric: tabular-nums; color: var(--autotune-text); }
-.leading-config { margin-top: 4px; font-size: 13px; overflow-wrap: anywhere; }
+.leading-config { display: flex; align-items: baseline; gap: 8px; min-width: 0; margin-top: 4px; font-size: 13px; }
+.leading-config > .muted { flex-shrink: 0; }
+.config-name { display: block; min-width: 0; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; border: 0; padding: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: help; }
+.config-name:hover { color: var(--el-color-primary); }
 .legacy-link { color: var(--el-color-primary); text-decoration: none; font-weight: 600; }
 .legacy-link:hover { text-decoration: underline; }
 @media (max-width: 520px) { .track-filters .el-select { width: 100%; } }
@@ -518,8 +524,7 @@ onMounted(async () => {
 .track-card .leader { border-top: 1px solid var(--autotune-border); padding-top: 18px; }
 .track-card .leading-score { font-size: 30px; letter-spacing: -.035em; color: var(--el-color-primary-dark-2); }
 .track-card .leader > .muted { font-size: 12px; margin-bottom: 10px; }
-.track-card .leading-config { display: flex; flex-wrap: wrap; gap: 4px 8px; line-height: 1.6; }
-.track-card .leading-config b { min-width: 0; overflow-wrap: anywhere; font-weight: 500; }
+.track-card .leading-config { flex-wrap: nowrap; gap: 8px; line-height: 1.6; }
 .track-card .leader .leader-caption { margin: 6px 0 0; }
 .track-card .track-name { line-height: 1.5; }
 .track-card .track-head > .nav-link { min-width: 0; overflow-wrap: anywhere; }

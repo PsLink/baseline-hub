@@ -22,7 +22,7 @@ const {
   baselineRun, optimizedRun, reportStatus, rows, name, hf,
   displayName, description, family, tags, license, homepage, defaultVariant,
   includeEnv, includeVolumes, startupMinutes, gpuProduct, advanced,
-  rememberCalls, loading, error, preview, picked, ready, changePair, isNew, onTick,
+  rememberCalls, loading, error, preview, picked, ready, baselineCandidates, optimizedCandidates, changePair, isNew, onTick,
   variantIds, inputs, questions, kept, summary, decide, useSuggestion, hfSuggestion, catalogStatus,
 } = draft
 const publication = useCatalogPublication(publicationApi, open)
@@ -91,12 +91,12 @@ async function preparePublication() {
               <span class="muted hint">{{ text('管理员指定', 'Fixed by the administrator') }}</span>
             </template>
             <el-select v-else v-model="baselineRun" :placeholder="text('选择 Baseline', 'Select Baseline')" @change="changePair">
-              <el-option v-for="row in rows.filter(r => r.run_id !== optimizedRun)" :key="row.run_id" :value="row.run_id" :label="row.label" />
+              <el-option v-for="row in baselineCandidates" :key="row.run_id" :value="row.run_id" :label="row.label" />
             </el-select>
           </el-form-item>
           <el-form-item label="Optimized">
             <el-select v-model="optimizedRun" :placeholder="text('选择 Optimized', 'Select Optimized')" @change="changePair">
-              <el-option v-for="row in rows.filter(r => r.run_id !== baselineRun)" :key="row.run_id" :value="row.run_id" :label="row.label" />
+              <el-option v-for="row in optimizedCandidates" :key="row.run_id" :value="row.run_id" :label="row.label" />
             </el-select>
           </el-form-item>
         </template>

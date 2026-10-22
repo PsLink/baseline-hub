@@ -495,7 +495,7 @@ export default {
       "willRun": "将要运行"
     },
     "submitted": "提交时间",
-    "subtitle": "按模型和 GPU 比较评测结果，提交你的优化配置。",
+    "subtitle": "选择赛道，提交配置，比较成绩。",
     "tabs": {
       "tracks": "赛道"
     },

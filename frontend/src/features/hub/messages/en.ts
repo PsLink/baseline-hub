@@ -51,7 +51,7 @@ export default {
       "track": "Track",
       "gpu": "GPU type",
       "gate": "SLO gate",
-      "progress": "Entries & measurements",
+      "progress": "Activity",
       "empty": "No matching tracks"
     },
     "abort": "Abort",
@@ -245,7 +245,7 @@ export default {
       "hideStaleHint": "Rows measured under an earlier version of this track's benchmark. They are real runs and keep their pages, but their numbers were taken under different settings, so the board will not rank them against the rest.",
       "measured": "Measured",
       "meetsGate": "meets gate",
-      "note": "{n} measured · card count is a column, throughput is normalized to 8 cards",
+      "note": "{n} measured · throughput normalized to 8 GPUs",
       "pending": "Submissions",
       "pendingEmpty": "Nothing queued or running",
       "pendingNote": "Entries without a measurement, including queued, running and failed submissions.",
@@ -495,7 +495,7 @@ export default {
       "willRun": "What will run"
     },
     "submitted": "Submitted",
-    "subtitle": "Compare results by model and GPU, and submit an optimized configuration.",
+    "subtitle": "Choose a track. Submit, measure, compare.",
     "tabs": {
       "tracks": "Tracks"
     },

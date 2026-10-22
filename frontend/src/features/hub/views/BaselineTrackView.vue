@@ -775,17 +775,17 @@ async function saveEdit() {
 // ---------------------------------------------------------- model-catalog export
 
 const catalogOpen = ref(false)
-/** Own measured entries and the administrator's shared baseline. */
+/** All board runs can be baseline; only own entries can be optimized. */
 const catalogCandidates = computed<CatalogCandidate[]>(() => {
   const seen = new Set<number>()
   return (track.value?.board ?? []).flatMap((r) => {
-    if (!ownsSubmission(r) && !r.is_reference) return []
     if (!r.run_id || seen.has(r.run_id)) return []
     seen.add(r.run_id)
     return [{
       run_id: r.run_id,
       label: r.version > 1 ? `${r.name} v${r.version}` : r.name,
       detail: r.rank ? `#${r.rank}` : '',
+      canOptimize: ownsSubmission(r),
     }]
   })
 })
@@ -991,7 +991,7 @@ onMounted(async () => {
     </el-alert>
 
     <!-- The track at a glance; the full rules are a tab down. -->
-    <p class="scoring-summary"><span>{{ locale === 'zh' ? '排名口径' : 'Ranking' }}</span> {{ rankedBy }} <span class="scoring-gate">{{ track.gate_text }}</span></p>
+    <p class="scoring-summary"><span>{{ locale === 'zh' ? '排名口径' : 'Ranking' }}</span> {{ metricLabel(track.ranking_metric, locale, true) }} <InfoHint :width="420">{{ rankedBy }}</InfoHint><span class="scoring-gate">{{ track.gate_text }}</span></p>
     <details class="disclosure track-overview">
       <summary>{{ locale === 'zh' ? '赛道概览与评测口径' : 'Track overview and scoring' }}</summary>
     <div class="facts">

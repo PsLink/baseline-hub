@@ -131,3 +131,6 @@ a.nav-link {
 /* Keep prose readable; IDs and commands retain compact monospace sizing. */
 .page-title { overflow-wrap: anywhere; text-wrap: balance; }
 .disclosure-body { font-size: var(--hub-font-body); }
+
+/* Long generated names stay readable in pointer, keyboard and touch tooltips. */
+.hub-name-tooltip { max-width: min(400px, calc(100vw - 32px)); overflow-wrap: anywhere; line-height: 1.6; }

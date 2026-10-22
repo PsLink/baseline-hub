@@ -9,6 +9,8 @@ export interface CatalogCandidate {
   label: string
   /** A short note next to the label: a score, a rank. */
   detail?: string
+  /** Track baseline options stay public; only owned runs can be optimized. */
+  canOptimize?: boolean
 }
 interface Row extends CatalogCandidate {
   picked: boolean
@@ -82,9 +84,30 @@ export function useCatalogExport(props: CatalogExportProps, options: {
   const catalogStatus = ref('')
 
   const picked = computed(() => rows.value.filter((r) => r.picked))
+  const baselineCandidates = computed(() => rows.value.filter(r => r.run_id !== optimizedRun.value))
+  const optimizedCandidates = computed(() => rows.value.filter(r =>
+    r.canOptimize !== false && r.run_id !== baselineRun.value))
   const ready = computed(() => props.trackSlug
-    ? !!baselineRun.value && !!optimizedRun.value && baselineRun.value !== optimizedRun.value
+    ? rows.value.some(r => r.run_id === baselineRun.value)
+      && optimizedCandidates.value.some(r => r.run_id === optimizedRun.value)
+      && (!props.fixedBaselineRunId || baselineRun.value === props.fixedBaselineRunId)
     : picked.value.length > 0)
+  function selectAvailablePair() {
+    const initialBaseline = props.initial.find(row => row.role === 'baseline')?.run_id
+    const initialOptimized = props.initial.find(row => row.role === 'optimized')?.run_id
+    const preferredBaseline = props.fixedBaselineRunId ?? baselineRun.value ?? initialBaseline
+    const canOptimize = (id: number | null | undefined) => id !== props.fixedBaselineRunId
+      && rows.value.some(row => row.run_id === id && row.canOptimize !== false)
+    // Reserve an owned run for optimized, even if the shared track pair used it as baseline.
+    optimizedRun.value = [optimizedRun.value, initialOptimized].find(canOptimize)
+      ?? rows.value.find(row => canOptimize(row.run_id) && row.run_id !== preferredBaseline)?.run_id
+      ?? rows.value.find(row => canOptimize(row.run_id))?.run_id ?? null
+    const canBaseline = (id: number | null | undefined) => id !== optimizedRun.value
+      && rows.value.some(row => row.run_id === id)
+    baselineRun.value = props.fixedBaselineRunId ?? [baselineRun.value, initialBaseline].find(canBaseline)
+      ?? rows.value.find(row => canBaseline(row.run_id))?.run_id ?? null
+    if (!canBaseline(baselineRun.value)) baselineRun.value = null
+  }
   function syncPair() {
     if (!props.trackSlug) return
     for (const row of rows.value) {
@@ -116,14 +139,8 @@ export function useCatalogExport(props: CatalogExportProps, options: {
       imageTag: old.get(candidate.run_id)?.imageTag ?? '',
     }))
     if (props.trackSlug) {
-      const available = (id: number | null | undefined) => rows.value.some(row => row.run_id === id)
       const previousPair = `${baselineRun.value}:${optimizedRun.value}`
-      baselineRun.value = props.fixedBaselineRunId ?? (available(baselineRun.value)
-        ? baselineRun.value : props.initial.find(row => row.role === 'baseline')?.run_id ?? null)
-      optimizedRun.value = available(optimizedRun.value) ? optimizedRun.value
-        : props.initial.find(row => row.role === 'optimized')?.run_id ?? null
-      if (!available(baselineRun.value)) baselineRun.value = null
-      if (!available(optimizedRun.value) || optimizedRun.value === baselineRun.value) optimizedRun.value = null
+      selectAvailablePair()
       if (previousPair !== `${baselineRun.value}:${optimizedRun.value}`) changePair()
       else syncPair()
     }
@@ -346,7 +363,7 @@ export function useCatalogExport(props: CatalogExportProps, options: {
       reportFailed.value = false
       baselineRun.value = props.fixedBaselineRunId ?? props.initial.find(p => p.role === 'baseline')?.run_id ?? null
       optimizedRun.value = props.initial.find(p => p.role === 'optimized')?.run_id ?? null
-      if (optimizedRun.value === baselineRun.value) optimizedRun.value = null
+      if (props.trackSlug) selectAvailablePair()
       syncPair()
       startupMinutes.value = null
       defaultVariant.value = ''
@@ -365,7 +382,7 @@ export function useCatalogExport(props: CatalogExportProps, options: {
     hf, displayName, description, family, tags, license, homepage,
     defaultVariant, includeEnv, includeVolumes, startupMinutes, gpuProduct, reportId, advanced,
     envCategories, rememberCalls, loading, error, preview,
-    picked, ready, changePair, isNew, onTick, body,
+    picked, ready, baselineCandidates, optimizedCandidates, changePair, isNew, onTick, body,
     generateReport, load, refreshCandidates, variantIds, inputs, questions, kept, summary,
     decide, useSuggestion, prepare, hfSuggestion, catalogStatus,
   }
