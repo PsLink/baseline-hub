@@ -477,7 +477,8 @@ def test_logs_and_catalog_zip_are_forwarded_without_json_corruption(platform):
     response = client.get(root + "/runs/5/log")
     assert response.status_code == 200
     assert response.text == "engine started\nmeasured\n"
-    response = client.post(root + "/catalog-export/archive", headers=headers, json={"variants": []})
+    response = client.post(root + "/catalog-export/archive", headers=headers,
+                           json={"variants": [{"run_id": 5, "role": "optimized"}]})
     assert response.status_code == 200
     assert response.content == b"PK\x05\x06" + b"\x00" * 18
     assert response.headers["content-type"] == "application/zip"
@@ -655,7 +656,11 @@ def test_catalog_preview_and_zip_omit_validation_sidecars(platform):
         for path, content in files.items():
             output.writestr(path, content)
 
+    original = client.app.state.platform_transport
+
     def upstream(request):
+        if request.method == "GET":
+            return original.handle_request(request)
         if request.url.path.endswith("/preview"):
             return httpx.Response(200, json={"valid": True, "files": [
                 {"path": path, "kind": "variant", "text": content}
@@ -668,12 +673,13 @@ def test_catalog_preview_and_zip_omit_validation_sidecars(platform):
 
     client.app.state.platform_transport = httpx.MockTransport(upstream)
     root = "/api/platform/api/catalog-export"
-    preview = client.post(root + "/preview", json={}, headers=headers)
+    source = {"variants": [{"run_id": 5, "role": "optimized"}]}
+    preview = client.post(root + "/preview", json=source, headers=headers)
     assert preview.status_code == 200
     expected = {path: content for path, content in files.items()
                 if not path.endswith(".validation.json")}
     assert {file["path"]: file["text"] for file in preview.json()["files"]} == expected
-    response = client.post(root + "/archive", json={}, headers=headers)
+    response = client.post(root + "/archive", json=source, headers=headers)
     assert response.status_code == 200
     assert response.headers["content-disposition"] == 'attachment; filename="demo.zip"'
     with ZipFile(BytesIO(response.content)) as output:

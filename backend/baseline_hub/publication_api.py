@@ -14,7 +14,7 @@ from baseline_hub import publishing
 from baseline_hub.auth import identity
 from baseline_hub.catalog import slug
 from baseline_hub.catalog.requests import CatalogExportRequest
-from baseline_hub.catalog_exports import preview_export
+from baseline_hub.catalog_exports import check_sources, preview_export
 from baseline_hub.catalog_reports import check_comparison, upstream_source
 from baseline_hub.models import CatalogPublication, GithubCredential, GithubIdentity, User
 from baseline_hub.publication_files import prepare_files
@@ -27,7 +27,7 @@ from baseline_hub.publications import (
     publication_title,
 )
 from baseline_hub.sessions import current_session, db_session
-from baseline_hub.upstream import authorized, call
+from baseline_hub.upstream import authorized
 
 router = APIRouter(prefix="/catalog-export", tags=["catalog publications"])
 
@@ -62,22 +62,6 @@ def credential(db, user_id):
             },
         )
     return token
-
-
-def check_sources(http, body, linked):
-    if linked is None:
-        raise HTTPException(409, "请连接 AutoTune 账号")
-    owns = False
-    campaigns = []
-    for item in body["variants"]:
-        run = call(http, "GET", f"runs/{item['run_id']}")
-        campaign = call(http, "GET", f"campaigns/{run['campaign_id']}")
-        campaigns.append(campaign)
-        owns |= campaign.get("owner_id") == linked.upstream_user_id
-    # A shared baseline can accompany the user's own measured attempt.
-    if not owns:
-        raise HTTPException(403, "请至少选择一项自己的测量结果")
-    return campaigns
 
 
 def result(row):

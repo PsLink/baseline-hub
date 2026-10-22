@@ -440,3 +440,78 @@ def test_track_export_requires_completed_report_and_html(publisher):
     for source in (body, body | {"report_id": None}):
         response = client.post(ROOT + "/publication-previews", json=source, headers=headers)
         assert response.status_code == 409, response.text
+
+
+@pytest.mark.parametrize("endpoint", [
+    "/api/platform/api/catalog-export/preview",
+    "/api/platform/api/catalog-export/archive",
+    ROOT + "/publication-previews",
+])
+@pytest.mark.parametrize("scenario,expected", [
+    ("foreign_opt", 403),
+    ("shared_reference", 200),
+    ("foreign_baseline_without_track", 403),
+    ("foreign_baseline_without_reference", 403),
+    ("foreign_reference_as_opt", 403),
+])
+def test_exports_require_own_results_except_the_tracks_fixed_baseline(
+    publisher, endpoint, scenario, expected,
+):
+    client, _, _, state, headers = publisher
+    body = track_export(publisher)
+    original = client.app.state.platform_transport
+
+    def remote(request):
+        path = request.url.path
+        if path in {"/api/runs/5", "/api/runs/6"}:
+            return httpx.Response(200, json={"campaign_id": int(path.rsplit("/", 1)[1])})
+        if path in {"/api/campaigns/5", "/api/campaigns/6"}:
+            foreign = 6 if scenario == "foreign_opt" else 5
+            return httpx.Response(200, json={
+                "owner_id": 2 if path.endswith(f"/{foreign}") else 1,
+            })
+        if scenario == "foreign_baseline_without_reference" and path.endswith("/tracks/demo"):
+            return httpx.Response(200, json={"board": [{"run_id": 5}, {"run_id": 6}]})
+        return original.handle_request(request)
+
+    client.app.state.platform_transport = httpx.MockTransport(remote)
+    if scenario == "foreign_baseline_without_track":
+        body.pop("track_slug")
+    if scenario == "foreign_reference_as_opt":
+        body["variants"] = [
+            {"run_id": 6, "role": "baseline"}, {"run_id": 5, "role": "optimized"},
+        ]
+    response = client.post(endpoint, json=body, headers=headers)
+    assert response.status_code == expected, response.text
+    if expected == 403:
+        assert "export_body" not in state
+        assert not any(r.method == "POST" and r.url.path.endswith("/archive")
+                       for r in state["requests"])
+
+
+@pytest.mark.parametrize("operation", ["preview", "archive"])
+def test_empty_export_cannot_bypass_source_checks(publisher, operation):
+    client, _, _, _, headers = publisher
+    response = client.post(
+        f"/api/platform/api/catalog-export/{operation}", json={"variants": []}, headers=headers,
+    )
+    assert response.status_code == 422
+
+
+def test_submit_rejects_foreign_opt_even_when_baseline_is_still_owned(publisher):
+    client, _, _, _, headers = publisher
+    body = track_export(publisher)
+    reviewed = client.post(ROOT + "/publication-previews", json=body, headers=headers).json()
+    original = client.app.state.platform_transport
+
+    def remote(request):
+        if request.url.path == "/api/runs/6":
+            return httpx.Response(200, json={"campaign_id": 13})
+        if request.url.path == "/api/campaigns/13":
+            return httpx.Response(200, json={"owner_id": 2})
+        return original.handle_request(request)
+
+    client.app.state.platform_transport = httpx.MockTransport(remote)
+    path = ROOT + f"/publications/{reviewed['id']}"
+    assert client.post(path + "/submit", headers=headers).status_code == 403
+    assert client.get(path).json()["status"] == "preview"

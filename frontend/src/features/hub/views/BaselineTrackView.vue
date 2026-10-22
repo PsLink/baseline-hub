@@ -772,11 +772,11 @@ async function saveEdit() {
 // ---------------------------------------------------------- model-catalog export
 
 const catalogOpen = ref(false)
-/** Every measured entry on the board, once each, by the platform's run
- *  behind its measurement. */
+/** Own measured entries and the administrator's shared baseline. */
 const catalogCandidates = computed<CatalogCandidate[]>(() => {
   const seen = new Set<number>()
   return (track.value?.board ?? []).flatMap((r) => {
+    if (!ownsSubmission(r) && !r.is_reference) return []
     if (!r.run_id || seen.has(r.run_id)) return []
     seen.add(r.run_id)
     return [{

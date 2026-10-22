@@ -457,7 +457,7 @@ async function setReference() {
 const catalogOpen = ref(false)
 const catalogCandidates = computed<CatalogCandidate[]>(() => {
   const m = sub.value?.latest_measurement
-  if (!m?.run_id || !sub.value) return []
+  if (!m?.run_id || !sub.value || !ownsSubmission(sub.value)) return []
   return [{ run_id: m.run_id, label: `${sub.value.name} v${sub.value.version}` }]
 })
 

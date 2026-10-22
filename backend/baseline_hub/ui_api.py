@@ -11,7 +11,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 
 from baseline_hub.auth import identity
-from baseline_hub.catalog_exports import archive_export, preview_export
+from baseline_hub.catalog_exports import archive_export, check_sources, preview_export
 from baseline_hub.sessions import current_session, db_session
 from baseline_hub.submission_commands import (
     create_submission,
@@ -88,8 +88,10 @@ def forward(
         elif method == "POST" and stop:
             response = stop_run(http, int(stop[1]), linked, body=body, params=params)
         elif method == "POST" and path == "catalog-export/preview":
+            check_sources(http, body or {}, linked)
             response = preview_export(http, body or {}, params=params)
         elif method == "POST" and path == "catalog-export/archive":
+            check_sources(http, body or {}, linked)
             response = archive_export(http, body or {}, params=params)
         elif method == "POST" and re.fullmatch(r"autoreport/jobs(?:/[1-9][0-9]*/retry)?", path):
             response = request_operation(http, path, body=body, params=params)
