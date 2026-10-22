@@ -22,8 +22,8 @@ async function logout() {
 
 <template>
   <el-config-provider :locale="locale === 'zh' ? zhCn : en">
-  <header class="hub-header"><RouterLink to="/" class="brand">Baseline Hub</RouterLink>
-    <nav><RouterLink to="/baseline-hub">{{ locale === 'zh' ? '赛道' : 'Tracks' }}</RouterLink><RouterLink to="/reports">{{ locale === 'zh' ? '报告' : 'Reports' }}</RouterLink>
+  <header class="hub-header"><RouterLink to="/" class="brand"><svg class="brand-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true"><rect width="32" height="32" rx="9" fill="currentColor"/><path d="M9 22V17M16 22V10M23 22V14" stroke="white" stroke-width="3" stroke-linecap="round"/></svg><span>Baseline <span class="brand-suffix">Hub</span></span></RouterLink>
+    <nav :aria-label="locale === 'zh' ? '主导航' : 'Main navigation'"><RouterLink to="/baseline-hub" :class="{ 'section-active': $route.path.startsWith('/baseline-hub') }">{{ locale === 'zh' ? '赛道' : 'Tracks' }}</RouterLink><RouterLink to="/reports" :class="{ 'section-active': $route.path.startsWith('/reports') }">{{ locale === 'zh' ? '报告' : 'Reports' }}</RouterLink>
       <el-dropdown v-if="auth.user" trigger="click" @command="(command: string) => command === 'logout' ? logout() : command === 'language' ? setLocale(locale === 'zh' ? 'en' : 'zh') : router.push('/account')">
         <button class="user-menu">{{ auth.user.username }} ▾</button>
         <template #dropdown><el-dropdown-menu>

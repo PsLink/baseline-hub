@@ -1,11 +1,15 @@
 <script setup lang="ts">
 /** The Hub index offers card and list views of the same tracks.
  * Legacy submissions remain available in a separate drawer. */
+import { statusLabel, metricLabel } from '@/platform/i18n/display'
+import { useUrlState, usePageScroll, queryString, queryBoolean, queryChoice } from '@/platform/composables/pageState'
+import { filterTracks } from '../utils/trackFilters'
 import { formatRankingValue } from '../utils/board'
 import { inLineLabel, queueTooltip as queueTooltipOf } from '../utils/queue'
+import { Search } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, onMounted, ref, toRefs, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { api, ownsSubmission } from '@/plugins/api'
 import { type BaselineSubmission, type BaselineTrack, type FlagSpec } from '../types'
 import BaselineSubmitDialog from '../components/BaselineSubmitDialog.vue'
@@ -19,7 +23,6 @@ import { useLinkTo, useRowLink } from '@/plugins/api'
 import { usePoll } from '@/plugins/api'
 import { exactTime, relativeTime } from '@/plugins/api'
 
-const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const { t, locale } = useI18n()
@@ -40,7 +43,14 @@ function savedTrackView(): TrackView {
     return 'list'
   }
 }
-const trackView = ref<TrackView>(savedTrackView())
+const filters = useUrlState({
+  q: queryString(), gpu: queryString(), model: queryString(),
+  status: queryChoice('', ['', 'open', 'draft', 'retired']), mine: queryBoolean(),
+  hideRetired: queryBoolean(true), view: queryChoice(savedTrackView(), ['cards', 'list']),
+  tab: { ...queryString('tracks'), read: value => typeof value === 'string' && value && value !== 'revenue' ? value : 'tracks' },
+})
+const { q: search, gpu: gpuFilter, model: modelFilter, status: statusFilter, mine: onlyMine,
+  hideRetired, view: trackView, tab } = toRefs(filters)
 watch(trackView, (value) => {
   try {
     localStorage.setItem(viewStorageKey, value)
@@ -52,27 +62,16 @@ const trackRows = useRowLink((row: BaselineTrack) => `/baseline-hub/tracks/${row
 
 /** Retired tracks (superseded boards, one-off backfill siblings) stay in the
  *  database for provenance but clutter the grid; hidden by default. */
-const hideRetired = ref(true)
-const retiredCount = computed(() => tracks.value.filter((x) => x.status === 'retired').length)
-const search = ref('')
-const visibleTracks = computed(() => tracks.value.filter((track) => {
-  const query = search.value.trim().toLowerCase()
-  return (!hideRetired.value || track.status !== 'retired')
-    && (!query || [track.name, track.model_name, track.gpu_type].join(' ').toLowerCase().includes(query))
-}))
-/** Which tab, in the URL, so a tab is a link somebody can send. */
-// Old revenue-board links fall back to tracks while that tab is hidden.
-const tabOf = (q: unknown) => (typeof q === 'string' && q !== 'revenue' ? q : 'tracks')
-const tab = ref(tabOf(route.query.tab))
-watch(tab, (name) => {
-  if (name !== tabOf(route.query.tab))
-    router.replace({ query: name === 'tracks' ? {} : { tab: name } })
-})
-// …and the other way: back/forward, or the nav's "Baseline Hub" while on
-// another tab, change the URL without remounting this page.
-watch(() => route.query.tab, (q) => {
-  tab.value = tabOf(q)
-})
+const retiredCount = computed(() => tracks.value.filter(x => x.status === 'retired').length)
+const ownedSlugs = computed(() => new Set(submissions.value.filter(ownsSubmission).map(s => s.track_slug)))
+const visibleTracks = computed(() => filterTracks(tracks.value, filters, ownedSlugs.value))
+const gpuOptions = computed(() => [...new Set(tracks.value.map(t => t.gpu_type).filter(Boolean))].sort())
+const modelOptions = computed(() => [...new Set(tracks.value.map(t => t.model_name).filter(Boolean))].sort())
+const hasFilters = computed(() => !!(search.value || gpuFilter.value || modelFilter.value || statusFilter.value || onlyMine.value || !hideRetired.value))
+const text = (zh: string, en: string) => locale.value === 'zh' ? zh : en
+function clearFilters() {
+  Object.assign(filters, { q: '', gpu: '', model: '', status: '', mine: false, hideRetired: true })
+}
 const linkTo = useLinkTo()
 const legacyRows = useRowLink((row: BaselineSubmission) => `/baseline-hub/${row.id}`)
 
@@ -128,9 +127,9 @@ function trackStatusType(status: string): TagType {
 function latestValue(s: BaselineSubmission): string {
   const m = s.latest_measurement
   if (!m) return '—'
-  if (m.passed === false) return 'not passed'
+  if (m.passed === false) return statusLabel('not_passed', locale.value)
   const value = m.objective_value ?? m.score
-  return value == null ? (m.passed ? 'passed' : 'no score') : fmt(value)
+  return value == null ? (m.passed ? statusLabel('passed', locale.value) : text('无分数', 'No score')) : fmt(value)
 }
 function fmt(value: number | null): string {
   if (value == null) return '—'
@@ -142,7 +141,7 @@ function leaderValue(track: BaselineTrack): string {
 function leaderCaption(track: BaselineTrack): string {
   return track.ranking_metric.endsWith('tpm_card_norm')
     ? t('baselineHub.ranOn', { n: track.leader?.gpu_count ?? 0 })
-    : track.ranking_metric || t('baselineHub.detail.benchmarkScore')
+    : metricLabel(track.ranking_metric, locale.value)
 }
 
 async function retryBenchmark(track: BaselineTrack) {
@@ -183,6 +182,7 @@ async function abort(s: BaselineSubmission) {
 
 const first = useFirstLoad(load)
 const poll = usePoll(load, 10000)
+usePageScroll(() => !first.loading && !first.error)
 onMounted(async () => {
   // The page's own data first; the lists only its dialogs use come alongside.
   api.get('/machines/gpu-types')
@@ -198,7 +198,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="page">
+  <div class="page hub-index">
     <div class="header-row">
       <div>
         <h1 class="page-title">{{ t('baselineHub.title') }}</h1>
@@ -212,7 +212,7 @@ onMounted(async () => {
           @click="legacyOpen = true">
           {{ t('baselineHub.legacy') }}<span v-if="legacy.length" class="count">{{ legacy.length }}</span>
         </el-button>
-        <el-switch v-if="tab === 'tracks' && retiredCount" v-model="hideRetired" size="small"
+        <el-switch v-if="tab === 'tracks' && retiredCount && !statusFilter" v-model="hideRetired" size="small"
           class="hide-retired"
           :active-text="t('baselineHub.hideRetired', { n: retiredCount })" />
         <el-button v-if="isAdmin && tab === 'tracks'" type="primary"
@@ -225,13 +225,29 @@ onMounted(async () => {
       <el-tab-pane name="tracks">
         <template #label>{{ t('baselineHub.tabs.tracks') }}</template>
 
+        <div class="track-controls">
         <div class="track-toolbar">
-          <el-input v-model="search" clearable :aria-label="locale === 'zh' ? '搜索赛道' : 'Search tracks'" :placeholder="locale === 'zh' ? '搜索赛道、模型或 GPU' : 'Search tracks, models or GPUs'" class="track-search" />
+          <el-input v-model="search" clearable :aria-label="locale === 'zh' ? '搜索赛道' : 'Search tracks'" :placeholder="locale === 'zh' ? '搜索赛道、模型或 GPU' : 'Search tracks, models or GPUs'" class="track-search"><template #prefix><el-icon><Search /></el-icon></template></el-input>
           <el-radio-group v-model="trackView" size="small"
             :aria-label="t('baselineHub.view.label')">
             <el-radio-button value="cards">{{ t('baselineHub.view.cards') }}</el-radio-button>
             <el-radio-button value="list">{{ t('baselineHub.view.list') }}</el-radio-button>
           </el-radio-group>
+        </div>
+        <div v-if="tracks.length" class="track-filters">
+          <el-select v-model="gpuFilter" clearable :aria-label="text('GPU 卡型', 'GPU type')" :placeholder="text('全部 GPU', 'All GPUs')">
+            <el-option v-for="gpu in gpuOptions" :key="gpu" :label="gpu" :value="gpu" />
+          </el-select>
+          <el-select v-model="modelFilter" clearable filterable :aria-label="text('模型', 'Model')" :placeholder="text('全部模型', 'All models')">
+            <el-option v-for="model in modelOptions" :key="model" :label="model" :value="model" />
+          </el-select>
+          <el-select v-model="statusFilter" clearable :aria-label="text('赛道状态', 'Track status')" :placeholder="text('全部状态', 'All statuses')">
+            <el-option v-for="status in ['open', 'draft', 'retired']" :key="status" :label="statusLabel(status, locale)" :value="status" />
+          </el-select>
+          <el-checkbox v-model="onlyMine">{{ text('我参与的', 'My tracks') }}</el-checkbox>
+          <el-button v-if="hasFilters" text @click="clearFilters">{{ text('清空筛选', 'Clear filters') }}</el-button>
+        </div>
+        <p v-if="tracks.length" class="filter-count muted" role="status">{{ text(`显示 ${visibleTracks.length} / ${tracks.length} 个赛道`, `Showing ${visibleTracks.length} of ${tracks.length} tracks`) }}<span class="scope-note">{{ text('各赛道评测口径独立，成绩请在赛道内比较。', 'Compare results within a track; scoring differs across tracks.') }}</span></p>
         </div>
         <PageLoading v-if="!tracks.length && (first.loading || first.error)" :error="first.error"
           @retry="first.run" />
@@ -246,7 +262,7 @@ onMounted(async () => {
               <router-link :to="`/baseline-hub/tracks/${track.slug}`" class="nav-link">
                 <b class="track-name">{{ track.name }}</b></router-link>
               <el-tag size="small" :type="trackStatusType(track.status)" effect="plain">
-                {{ track.status }}</el-tag>
+                {{ statusLabel(track.status, locale) }}</el-tag>
             </div>
             <div class="muted tiny">
               {{ track.model_name }} · {{ track.gpu_type }}
@@ -261,11 +277,10 @@ onMounted(async () => {
                 { n: track.images.length }) }}</span>
             </div>
             <div v-if="track.leader" class="leader">
-              <span class="muted tiny">{{ t('baselineHub.leading') }}</span>
-              <b>{{ track.leader.name }}</b>
-              <span v-if="track.leader.version > 1" class="muted"> v{{ track.leader.version }}</span>
-              · <span class="mono">{{ leaderValue(track) }}</span>
-              <span class="muted tiny">{{ leaderCaption(track) }}</span>
+              <div class="leading-score">{{ leaderValue(track) }}</div>
+              <div class="muted" :title="track.ranking_metric">{{ metricLabel(track.ranking_metric, locale) }}<span v-if="track.ranking_metric.endsWith('tpm_card_norm')"> · {{ text('越高越好', 'Higher is better') }}</span></div>
+              <div class="leading-config"><span class="muted">{{ t('baselineHub.leading') }}</span> <b>{{ track.leader.name }}</b><span v-if="track.leader.version > 1" class="muted"> v{{ track.leader.version }}</span></div>
+              <div class="muted leader-caption">{{ leaderCaption(track) }}</div>
             </div>
             <div v-else class="muted tiny leader">{{ t('baselineHub.noRanked') }}</div>
             <div v-if="track.status === 'draft'" class="warn tiny draft-note">
@@ -277,7 +292,7 @@ onMounted(async () => {
         </div>
         <template v-else>
         <el-table :data="visibleTracks" row-key="id" class="track-list"
-          :empty-text="t('baselineHub.view.empty')" v-bind="trackRows">
+          :empty-text="hasFilters ? text('没有匹配的赛道，请调整或清空筛选。', 'No matching tracks. Adjust or clear filters.') : t('baselineHub.view.empty')" v-bind="trackRows">
           <el-table-column :label="t('baselineHub.view.track')" min-width="210">
             <template #default="{ row }">
               <router-link :to="`/baseline-hub/tracks/${row.slug}`" class="nav-link">
@@ -300,7 +315,7 @@ onMounted(async () => {
           <el-table-column :label="t('common.status')" width="110">
             <template #default="{ row }">
               <el-tag size="small" :type="trackStatusType(row.status)" effect="plain">
-                {{ row.status }}</el-tag>
+                {{ statusLabel(row.status, locale) }}</el-tag>
             </template>
           </el-table-column>
           <el-table-column :label="t('baselineHub.view.progress')" min-width="140">
@@ -314,9 +329,9 @@ onMounted(async () => {
           <el-table-column :label="t('baselineHub.leading')" min-width="220">
             <template #default="{ row }">
               <template v-if="row.leader">
-                <b>{{ row.leader.name }}</b>
-                <span v-if="row.leader.version > 1" class="muted"> v{{ row.leader.version }}</span>
-                <div class="mono">{{ leaderValue(row) }}</div>
+                <div class="leading-score">{{ leaderValue(row) }}</div>
+                <div class="muted" :title="row.ranking_metric">{{ metricLabel(row.ranking_metric, locale) }}<span v-if="row.ranking_metric.endsWith('tpm_card_norm')"> · {{ text('越高越好', 'Higher is better') }}</span></div>
+                <div class="leading-config">{{ row.leader.name }}<span v-if="row.leader.version > 1" class="muted"> v{{ row.leader.version }}</span></div>
                 <div class="muted">{{ leaderCaption(row) }}</div>
               </template>
               <span v-else class="muted">{{ t('baselineHub.noRanked') }}</span>
@@ -329,7 +344,7 @@ onMounted(async () => {
             <div class="muted">{{ item.model_name }} · {{ item.gpu_type }}</div>
             <div v-if="item.leader" class="mobile-leading"><strong>{{ leaderValue(item) }}</strong><span class="muted">{{ leaderCaption(item) }}</span></div>
             <p v-else class="muted">{{ t('baselineHub.noRanked') }}</p>
-            <div class="mobile-track-footer"><span class="muted">{{ t('baselineHub.measuredCount', { n: item.measured_count }) }}</span><el-tag v-if="item.status !== 'open'" :type="trackStatusType(item.status)" effect="plain">{{ item.status }}</el-tag></div>
+            <div class="mobile-track-footer"><span class="muted">{{ t('baselineHub.measuredCount', { n: item.measured_count }) }}</span><el-tag v-if="item.status !== 'open'" :type="trackStatusType(item.status)" effect="plain">{{ statusLabel(item.status, locale) }}</el-tag></div>
             <p v-if="item.status === 'draft'" class="warn">{{ item.benchmark_error || t('baselineHub.noBenchmarkYet') }}</p>
           </article>
           <p v-if="!visibleTracks.length" class="muted">{{ t('baselineHub.view.empty') }}</p>
@@ -355,7 +370,7 @@ onMounted(async () => {
         <el-table-column prop="id" :label="t('common.id')" width="60" />
         <el-table-column :label="t('baselineHub.entry')" min-width="180">
           <template #default="{ row }">
-            <b>{{ row.name }}</b>
+            <router-link :to="`/baseline-hub/${row.id}`" class="legacy-link">{{ row.name }}</router-link>
             <el-tag v-if="row.version > 1" size="small" effect="plain" class="version">
               v{{ row.version }}
             </el-tag>
@@ -380,9 +395,9 @@ onMounted(async () => {
           <template #default="{ row }">
             <el-tooltip v-if="row.status === 'queued' && (row.queued_reason || row.queue_ahead?.length)"
               :content="queueTooltip(row)" placement="top">
-              <el-tag :type="statusType(row.status)" size="small">{{ row.status }}</el-tag>
+              <el-tag :type="statusType(row.status)" size="small">{{ statusLabel(row.status, locale) }}</el-tag>
             </el-tooltip>
-            <el-tag v-else :type="statusType(row.status)" size="small">{{ row.status }}</el-tag>
+            <el-tag v-else :type="statusType(row.status)" size="small">{{ statusLabel(row.status, locale) }}</el-tag>
             <div v-if="row.status === 'running' && row.run_status" class="muted tiny">
               {{ row.run_status }}
             </div>
@@ -421,6 +436,18 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.track-controls { background: white; border: 1px solid var(--autotune-border); border-radius: 12px; padding: 20px 22px 0; margin-bottom: 24px; }
+.track-controls .filter-count { border-top: 1px solid var(--autotune-border); padding: 14px 0; margin: 18px 0 0; }
+.track-filters { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.track-filters .el-select { width: 180px; }
+.filter-count { margin: 12px 0; display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between; }
+.scope-note { font-size: 13px; }
+.leading-score { font-size: 22px; line-height: 1.35; font-weight: 650; font-variant-numeric: tabular-nums; color: var(--autotune-text); }
+.leading-config { margin-top: 4px; font-size: 13px; overflow-wrap: anywhere; }
+.legacy-link { color: var(--el-color-primary); text-decoration: none; font-weight: 600; }
+.legacy-link:hover { text-decoration: underline; }
+@media (max-width: 520px) { .track-filters .el-select { width: 100%; } }
+
 .hub-index-tabs > :deep(.el-tabs__header:not(:has(.el-tabs__item ~ .el-tabs__item))) { display: none; }
 
 .mobile-track-list { display: none; }
@@ -436,6 +463,7 @@ onMounted(async () => {
 }
 
 .track-search { max-width: 360px; margin-right: auto; }
+@media (max-width: 720px) { .track-search { max-width: none; } }
 .track-toolbar { gap: 16px; }
 .track-toolbar {
   display: flex;
@@ -471,10 +499,37 @@ onMounted(async () => {
 .track-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
-  gap: 14px;
+  gap: 20px;
 }
 .track-card {
   cursor: pointer;
+  border-color: var(--autotune-border);
+  border-radius: 12px;
+  transition: border-color .18s ease, box-shadow .18s ease;
+}
+.track-card:hover, .track-card:focus-visible {
+  border-color: var(--el-color-primary-light-5);
+  box-shadow: 0 6px 22px rgb(24 64 64 / 7%) !important;
+}
+.track-card :deep(.el-card__body) { padding: 24px; }
+.track-card .track-head { margin-bottom: 8px; }
+.track-card .tiny { margin-left: 0; }
+.track-card .stats { flex-wrap: wrap; gap: 6px 16px; padding: 10px 0 16px; }
+.track-card .leader { border-top: 1px solid var(--autotune-border); padding-top: 18px; }
+.track-card .leading-score { font-size: 30px; letter-spacing: -.035em; color: var(--el-color-primary-dark-2); }
+.track-card .leader > .muted { font-size: 12px; margin-bottom: 10px; }
+.track-card .leading-config { display: flex; flex-wrap: wrap; gap: 4px 8px; line-height: 1.6; }
+.track-card .leading-config b { min-width: 0; overflow-wrap: anywhere; font-weight: 500; }
+.track-card .leader .leader-caption { margin: 6px 0 0; }
+.track-card .track-name { line-height: 1.5; }
+.track-card .track-head > .nav-link { min-width: 0; overflow-wrap: anywhere; }
+.track-card .track-head > .el-tag { flex-shrink: 0; }
+.hub-index > .header-row { margin-bottom: 30px; }
+@media (max-width: 720px) {
+  .track-controls { padding: 16px 16px 0; margin-bottom: 18px; }
+  .track-filters { gap: 10px; }
+  .track-filters .el-select { flex: 1 1 140px; width: auto; }
+  .track-controls .scope-note { line-height: 1.6; }
 }
 .track-card.retired {
   opacity: 0.7;

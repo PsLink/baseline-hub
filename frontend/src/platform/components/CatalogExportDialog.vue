@@ -64,7 +64,7 @@ async function preparePublication() {
 </script>
 
 <template>
-  <el-dialog v-model="open" :title="t('catalogExport.title')" width="min(760px, calc(100vw - 24px))" top="6vh">
+  <el-dialog v-model="open" :title="t('catalogExport.title')" width="min(760px, calc(100vw - 24px))" top="4vh" class="hub-dialog catalog-dialog" :close-on-click-modal="false">
     <el-steps :active="step === 'configure' ? 0 : 1" finish-status="success" simple class="steps">
       <el-step :title="text('确认配置', 'Confirm configuration')" />
       <el-step :title="text('确认变更', 'Review changes')" />
@@ -268,6 +268,9 @@ summary { cursor: pointer; padding: 12px 0; }
 .authorization { padding: 12px; background: var(--el-fill-color-light); margin-top: 12px; border-radius: 6px; }
 .el-alert { margin-top: 12px; }
 @media (max-width: 600px) {
+  .catalog-dialog :deep(.el-form-item) { display: block; }
+  .catalog-dialog :deep(.el-form-item__label) { float: none; display: block; width: auto !important; text-align: left; height: auto; padding-bottom: 6px; }
+  .catalog-dialog :deep(.el-form-item__content) { margin-left: 0 !important; }
   .q-row { flex-wrap: wrap; }
   .q-row code { flex-basis: 100%; }
   .task-link { float: none; display: block; }

@@ -2,7 +2,8 @@
 /** Saved reports. Plugins may add actions to the header (`reports.actions`)
  *  and a section above the list (`reports.sections`), e.g. to write reports
  *  from here; both get `reload` to refresh the list. */
-import { computed, onMounted, ref } from 'vue'
+import { useUrlState, usePageScroll, queryString } from '../composables/pageState'
+import { computed, onMounted, ref, toRefs } from 'vue'
 import { api, type AgentReport } from '../api/client'
 import InfoHint from '../components/InfoHint.vue'
 import PageLoading from '../components/PageLoading.vue'
@@ -15,7 +16,7 @@ import { exactTime, relativeTime } from '../utils/time'
 const { t, locale } = useI18n()
 const reportRows = useRowLink((row: AgentReport) => `/reports/${row.id}`)
 const reports = ref<AgentReport[]>([])
-const search = ref('')
+const { q: search } = toRefs(useUrlState({ q: queryString() }))
 const visibleReports = computed(() => reports.value.filter((item) =>
   [item.title, item.created_by_name, item.group?.name || ''].join(' ').toLowerCase()
     .includes(search.value.trim().toLowerCase())))
@@ -27,6 +28,7 @@ async function load() {
   reports.value = (await api.get('/agent/v1/reports')).data
 }
 const first = useFirstLoad(load)
+usePageScroll(() => !first.loading && !first.error)
 
 onMounted(first.run)
 </script>

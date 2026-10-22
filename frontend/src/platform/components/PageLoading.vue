@@ -15,14 +15,14 @@ onBeforeUnmount(() => window.clearTimeout(timer))
 </script>
 
 <template>
-  <div class="page-loading">
+  <div class="page-loading" role="status" aria-live="polite" :aria-busy="!error">
     <template v-if="error">
       <div class="failed">{{ t('common.loadFailed') }}</div>
       <div class="muted detail">{{ error }}</div>
       <el-button size="small" @click="$emit('retry')">{{ t('common.retry') }}</el-button>
     </template>
     <template v-else-if="shown">
-      <div class="spin" />
+      <div class="spin" aria-hidden="true" />
       <div class="muted">{{ t('common.loading') }}</div>
     </template>
   </div>

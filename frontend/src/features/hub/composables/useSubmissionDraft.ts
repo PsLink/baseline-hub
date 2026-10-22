@@ -104,6 +104,19 @@ export function useSubmissionDraft(dependencies: SubmissionDraftDependencies) {
   const envRows = ref<KV[]>([])
   const volRows = ref<Vol[]>([])
   const jsonBad = ref({ args: false, env: false, vols: false })
+  const baseline = ref('')
+  let draftContext = ''
+  const initialized = ref(false)
+  let resumeCommand = false
+  const fingerprint = () => JSON.stringify([form.value, argRows.value, envRows.value, volRows.value])
+  const dirty = computed(() => initialized.value && fingerprint() !== baseline.value)
+  const contextKey = () => JSON.stringify([track.value?.id, track.value?.benchmark_config_hash,
+    resubmitOf.value?.id, resubmitOf.value?.version])
+  function discardDraft() {
+    cancelSession()
+    initialized.value = false
+    if (open.value) prime()
+  }
   const commandFocused = ref(false)
   const focusedPane = ref<'' | 'args' | 'env' | 'vols'>('')
 
@@ -375,7 +388,7 @@ export function useSubmissionDraft(dependencies: SubmissionDraftDependencies) {
       return true
     } catch (error: any) {
       if (seq !== parseSeq || !open.value) return false
-      const message = errorText(error, 'Could not parse that command')
+      const message = errorText(error, t('baselineHub.submit.parseFailed'))
       revealValidation('command', message)
       notify.error(message)
       return false
@@ -413,8 +426,19 @@ export function useSubmissionDraft(dependencies: SubmissionDraftDependencies) {
 
   // ------------------------------------------------------------------- dialog
 
-  /** Rebuild the form each time the dialog opens: empty, seeded from the track,
-   *  or a copy of the submission being evolved. */
+  function refreshIdentity(epoch: number) {
+    if (track.value) {
+      api.get('/auth/me')
+        .then(({ data }) => {
+          if (!isCurrent(epoch)) return
+          hasSavedToken.value = !!data.has_contest_token
+          publishedAs.value = data.contest_contributor || data.username || ''
+        })
+        .catch(() => { if (isCurrent(epoch)) hasSavedToken.value = false })
+    }
+  }
+
+  /** Seed a new context; reopening the same dialog retains its in-memory draft. */
   function prime() {
     commandDirty = false
     uncertain.value = false
@@ -437,15 +461,7 @@ export function useSubmissionDraft(dependencies: SubmissionDraftDependencies) {
     validationTarget.value = ''
     validationMessage.value = ''
     asJson.value = false
-    if (track.value) {
-      api.get('/auth/me')
-        .then(({ data }) => {
-          if (!isCurrent(epoch)) return
-          hasSavedToken.value = !!data.has_contest_token
-          publishedAs.value = data.contest_contributor || data.username || ''
-        })
-        .catch(() => { if (isCurrent(epoch)) hasSavedToken.value = false })
-    }
+    refreshIdentity(epoch)
     if (t) {
       form.value.served_model_name = t.served_model_name
       form.value.model_path = t.model_path
@@ -459,11 +475,17 @@ export function useSubmissionDraft(dependencies: SubmissionDraftDependencies) {
     }
     if (resubmitOf.value) fill(resubmitOf.value)
     else void loadEntries()
+    // Match the verified image synchronously before recording a clean baseline.
+    const selectedImage = track.value?.images.find(image => image.image === form.value.image)
+    if (selectedImage) form.value.engine = selectedImage.engine
     parseReport.value = null
     trackReport.value = null
     jsonBad.value = { args: false, env: false, vols: false }
     syncTextsFromRows()
     syncCommandFromState()
+    draftContext = contextKey()
+    initialized.value = true
+    baseline.value = fingerprint()
   }
 
   /** Copy an entry's config into the form. Inside a track only what an entrant
@@ -583,7 +605,7 @@ export function useSubmissionDraft(dependencies: SubmissionDraftDependencies) {
   async function submitPrepared() {
     const epoch = generation
     if (jsonBad.value.args || jsonBad.value.env || jsonBad.value.vols) {
-      notify.error('A JSON pane is invalid — fix it (or re-edit the rows) first')
+      notify.error(t('baselineHub.submit.jsonValidation'))
       return
     }
     const f = form.value
@@ -672,15 +694,16 @@ export function useSubmissionDraft(dependencies: SubmissionDraftDependencies) {
       }
       if (!isCurrent(epoch)) return
       busy.value = false
+      initialized.value = false
       open.value = false
       onSubmitted(data.id)
     } catch (error: any) {
       if (!isCurrent(epoch)) return
       if (!error.response || error.response.status >= 500) {
         uncertain.value = true
-        notify.warning('提交响应未确认，请先刷新提交记录核查，避免重复创建任务。')
+        notify.warning(t('baselineHub.submit.unconfirmedResponse'))
       }
-      const message = errorText(error, 'Submit failed')
+      const message = errorText(error, t('baselineHub.submit.failed'))
       const detail = error.response?.data?.detail
       const fieldMap: Record<string, string> = {
         name: 'name', image: 'image', model_path: 'model_path', engine_args: 'args',
@@ -707,8 +730,18 @@ export function useSubmissionDraft(dependencies: SubmissionDraftDependencies) {
   }
 
   watch(open, (isOpen) => {
+    if (!isOpen) resumeCommand = commandDirty
     cancelSession()
-    if (isOpen) prime()
+    commandFocused.value = false
+    focusedPane.value = ''
+    if (isOpen) {
+      if (!initialized.value || draftContext !== contextKey()) prime()
+      else {
+        commandDirty = resumeCommand
+        refreshIdentity(generation)
+        if (!resubmitOf.value) void loadEntries()
+      }
+    }
   }, { immediate: true, flush: 'sync' })
 
   onScopeDispose(() => {
@@ -717,7 +750,7 @@ export function useSubmissionDraft(dependencies: SubmissionDraftDependencies) {
   })
 
   return {
-    contestBoard, hasSavedToken, publishedAs, advanced, asJson,
+    dirty, discardDraft, contestBoard, hasSavedToken, publishedAs, advanced, asJson,
     busy, uncertain, validationTarget, validationMessage, validationRevision, revealValidation, parsing, parseReport, trackReport, form,
     argRows, envRows, volRows, jsonBad, commandFocused, focusedPane,
     cardsFromRows, supportsNodes, nodeCount, perNodeCards, nodesBad, parsedArgs,

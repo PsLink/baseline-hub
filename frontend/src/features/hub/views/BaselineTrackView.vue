@@ -9,9 +9,11 @@
  *  cannot reproduce is trivia. The ranking table underneath is for reading
  *  how it was won, which is a second question.
  */
+import { statusLabel, metricLabel } from '@/platform/i18n/display'
+import { useUrlState, usePageScroll, rememberedPage, queryString, queryBoolean, queryPage, queryChoice } from '@/platform/composables/pageState'
 import { inLineLabel, queueTooltip as queueTooltipOf } from '../utils/queue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, toRefs, watch } from 'vue'
 import { filterBoardRows, formatRankingValue, hasQualityAssessment, qualityVerdict } from '../utils/board'
 import { useRoute, useRouter } from 'vue-router'
 import { api, ownsSubmission } from '@/plugins/api'
@@ -31,11 +33,15 @@ import { usePoll } from '@/plugins/api'
 import { PageLoading, useFirstLoad } from '@/plugins/api'
 import { exactTime, relativeTime } from '@/plugins/api'
 
-const showBoardDetails = ref(false)
-const boardSearch = ref('')
-const boardPage = ref(1)
-const boardPageSize = ref(20)
-const selectedScenario = ref('')
+const boardState = useUrlState({
+  details: queryBoolean(), q: queryString(), page: queryPage(), size: queryChoice('20', ['20', '50', '100']),
+  scenario: queryString(), tab: queryChoice('board', ['board', 'pending', 'rules']), hideStale: queryBoolean(true),
+})
+const { details: showBoardDetails, q: boardSearch, page: boardPage, scenario: selectedScenario,
+  tab, hideStale } = toRefs(boardState)
+const boardPageSize = computed({ get: () => Number(boardState.size), set: (n: number) => { boardState.size = String(n) as '20' | '50' | '100' } })
+const resetBoardPage = () => { boardPage.value = 1 }
+const trackListUrl = rememberedPage('/baseline-hub')
 const selectedConfig = ref<TrackBoardRow | null>(null)
 const configOpen = computed({
   get: () => !!selectedConfig.value,
@@ -55,12 +61,10 @@ const templates = ref<TrackTemplate[]>([])
 const gpuTypes = ref<string[]>([])
 const flagCatalog = ref<Record<string, FlagSpec[]>>({})
 const isAdmin = computed(() => auth.user?.role === 'admin')
-const tab = ref('board')
 /** Rows measured under an older version of the benchmark are hidden by
  *  default: they cannot be compared with the rest, so showing them next to
  *  numbers they do not share invites exactly the comparison the board
  *  refuses to make. The toggle is there because they are still real runs. */
-const hideStale = ref(true)
 
 const submitOpen = ref(false)
 const resubmitOf = ref<BaselineSubmission | null>(null)
@@ -167,7 +171,7 @@ const qualityColumns = computed(() => {
     key: c.key,
     kind: c.kind,
     // One quality suite is just "Quality"; two need naming apart.
-    header: c.kind === 'metric' ? c.label : modules > 1 ? `Quality · ${c.label}` : 'Quality',
+    header: c.kind === 'metric' ? c.label : modules > 1 ? `${t('baselineHub.board.quality')} · ${c.label}` : t('baselineHub.board.quality'),
   }))
 })
 function quality(row: TrackBoardRow, key: string): TrackQualityCell | null {
@@ -182,8 +186,8 @@ function qualityGate(cell: TrackQualityCell | null): string {
   if (cell.kind === 'module') {
     if (cell.detail) return `${cell.key}: ${cell.detail}`
     return cell.ok === null
-      ? `${cell.key}: not reported`
-      : `${cell.key}: ${cell.ok ? 'every gate held' : 'gate not met'}`
+      ? `${cell.key}: ${locale.value === 'zh' ? '未报告' : 'Not reported'}`
+      : `${cell.key}: ${cell.ok ? t('baselineHub.detail.held') : t('baselineHub.detail.crossed')}`
   }
   const parts = []
   if (cell.min != null) parts.push(`≥ ${cell.min}`)
@@ -207,15 +211,14 @@ const pagedBoard = computed(() => filteredBoard.value.slice(
 ))
 const visibleScenarioLabels = computed(() => showBoardDetails.value ? scenarioLabels.value
   : selectedScenario.value ? [selectedScenario.value] : [])
-watch([boardSearch, hideStale, boardPageSize], () => { boardPage.value = 1 })
-watch(() => filteredBoard.value.length, (length) => {
+watch(() => [!!track.value, filteredBoard.value.length, boardPageSize.value] as const, ([loaded, length]) => {
+  if (!loaded) return
   boardPage.value = Math.min(boardPage.value, Math.max(1, Math.ceil(length / boardPageSize.value)))
 })
 const boardEmptyText = computed(() => boardSearch.value.trim()
   ? (locale.value === 'zh' ? '没有匹配的提交，请调整搜索条件。' : 'No matching entries. Try a different search.')
   : t('baselineHub.board.empty'))
-const rankingLabel = computed(() => track.value?.ranking_metric.endsWith('tpm_card_norm')
-  ? 'TPM@8' : track.value?.ranking_metric || t('baselineHub.detail.benchmarkScore'))
+const rankingLabel = computed(() => metricLabel(track.value?.ranking_metric ?? '', locale.value))
 function rankValue(value: number | null | undefined) {
   return formatRankingValue(value, track.value?.ranking_metric ?? '')
 }
@@ -903,6 +906,7 @@ function fmtScore(v: number | null | undefined): string {
 
 const page = useFirstLoad(load)
 const poll = usePoll(load, 10000)
+usePageScroll(() => !!track.value)
 const pendingRows = useRowLink((row: BaselineSubmission) => `/baseline-hub/${row.id}`)
 onMounted(async () => {
   // The page's own data first; the lists only its dialogs use come alongside.
@@ -920,19 +924,19 @@ onMounted(async () => {
 
 <template>
   <div v-if="track" class="page">
-    <BackLink to="/baseline-hub" :label="t('baselineHub.back')" />
+    <BackLink :to="trackListUrl" :label="t('baselineHub.back')" />
     <div class="header-row">
       <div>
         <h1 class="page-title">
           {{ track.name }}
           <el-tag :type="trackStatusType(track.status)" class="version" effect="plain">
-            {{ track.status }}</el-tag>
+            {{ statusLabel(track.status, locale) }}</el-tag>
         </h1>
         <span class="muted">
           {{ track.model_name }} · {{ track.gpu_type }}
           <template v-if="showPrecision"> · {{ track.precision }}</template>
-          <template v-if="track.opened_at"> · opened {{ relativeTime(track.opened_at) }}</template>
-          <template v-if="track.retired_at"> · retired {{ relativeTime(track.retired_at) }}</template>
+          <template v-if="track.opened_at"> · {{ locale === 'zh' ? '开放于' : 'opened' }} {{ relativeTime(track.opened_at) }}</template>
+          <template v-if="track.retired_at"> · {{ locale === 'zh' ? '退役于' : 'retired' }} {{ relativeTime(track.retired_at) }}</template>
         </span>
       </div>
       <div class="actions">
@@ -1117,7 +1121,7 @@ onMounted(async () => {
           </p>
           <div class="tabhead-actions">
             <el-checkbox v-model="showBoardDetails">{{ locale === 'zh' ? '详细指标' : 'Detailed metrics' }}</el-checkbox>
-            <el-checkbox v-if="staleRows.length" v-model="hideStale" size="small">
+            <el-checkbox v-if="staleRows.length" v-model="hideStale" @update:model-value="resetBoardPage" size="small">
               {{ t('baselineHub.board.hideStale', { n: staleRows.length }) }}
               <InfoHint :width="360">{{ t('baselineHub.board.hideStaleHint') }}</InfoHint>
             </el-checkbox>
@@ -1125,7 +1129,7 @@ onMounted(async () => {
         </div>
         <p v-if="performanceOnly" class="muted quality-not-configured">{{ locale === 'zh' ? '本赛道未配置输出质量检查，仅评测性能。' : 'This track evaluates performance; no output quality checks are configured.' }}</p>
         <div class="board-toolbar">
-          <el-input v-model="boardSearch" clearable :aria-label="locale === 'zh' ? '搜索提交' : 'Search entries'" :placeholder="locale === 'zh' ? '搜索配置、提交人或引擎' : 'Search configurations, contributors or engines'" />
+          <el-input v-model="boardSearch" clearable @update:model-value="resetBoardPage" :aria-label="locale === 'zh' ? '搜索提交' : 'Search entries'" :placeholder="locale === 'zh' ? '搜索配置、提交人或引擎' : 'Search configurations, contributors or engines'" />
           <el-select v-if="scenarioLabels.length > 1 && !showBoardDetails" v-model="selectedScenario" clearable :aria-label="locale === 'zh' ? '对比场景' : 'Compare scenario'" :placeholder="locale === 'zh' ? '对比场景（可选）' : 'Compare a scenario (optional)'">
             <el-option v-for="label in scenarioLabels" :key="label" :label="label" :value="label" />
           </el-select>
@@ -1245,7 +1249,7 @@ onMounted(async () => {
             </template>
           </el-table-column>
         </el-table>
-        <el-pagination v-if="filteredBoard.length > 20" v-model:current-page="boardPage" v-model:page-size="boardPageSize" :total="filteredBoard.length" :page-sizes="[20, 50, 100]" layout="prev, pager, next, sizes" class="board-pagination" />
+        <el-pagination v-if="filteredBoard.length > 20" v-model:current-page="boardPage" v-model:page-size="boardPageSize" @size-change="resetBoardPage" :total="filteredBoard.length" :page-sizes="[20, 50, 100]" layout="prev, pager, next, sizes" class="board-pagination" />
       </el-tab-pane>
 
       <el-tab-pane name="pending">
@@ -1254,7 +1258,7 @@ onMounted(async () => {
         <p class="muted tabnote">{{ t('baselineHub.board.pendingNote') }}</p>
         <div class="mobile-pending">
           <article v-for="entry in pending" :key="entry.id" class="mobile-result">
-            <div class="mobile-result-heading"><router-link :to="`/baseline-hub/${entry.id}`" class="nav-link">{{ entry.name }}</router-link><el-tag :type="statusType(entry.status)" effect="plain">{{ entry.status }}</el-tag></div>
+            <div class="mobile-result-heading"><router-link :to="`/baseline-hub/${entry.id}`" class="nav-link">{{ entry.name }}</router-link><el-tag :type="statusType(entry.status)" effect="plain">{{ statusLabel(entry.status, locale) }}</el-tag></div>
             <p v-if="entry.status === 'queued'" class="muted">{{ inLine(entry) }}<br>{{ entry.queued_reason }}</p>
             <p v-else-if="entry.status === 'failed'" class="missed">{{ entry.failure_class }} {{ entry.error }}</p>
             <p v-else-if="entry.run_status" class="muted">{{ entry.run_status }}</p>
@@ -1281,10 +1285,10 @@ onMounted(async () => {
             <template #default="{ row }">
               <el-tooltip v-if="row.status === 'queued' && (row.queued_reason || row.queue_ahead?.length)"
                 :content="queueTooltip(row)" placement="top">
-                <el-tag :type="statusType(row.status)" size="small">{{ row.status }}</el-tag>
+                <el-tag :type="statusType(row.status)" size="small">{{ statusLabel(row.status, locale) }}</el-tag>
               </el-tooltip>
-              <el-tag v-else :type="statusType(row.status)" size="small">{{ row.status }}</el-tag>
-              <div v-if="row.status === 'running' && row.run_status" class="muted tiny">{{ row.run_status }}</div>
+              <el-tag v-else :type="statusType(row.status)" size="small">{{ statusLabel(row.status, locale) }}</el-tag>
+              <div v-if="row.status === 'running' && row.run_status" class="muted tiny">{{ statusLabel(row.run_status, locale) }}</div>
               <template v-else-if="row.status === 'queued'">
                 <div class="muted tiny">{{ inLine(row) }}</div>
                 <div v-if="row.queued_reason" class="muted tiny">{{ row.queued_reason }}</div>

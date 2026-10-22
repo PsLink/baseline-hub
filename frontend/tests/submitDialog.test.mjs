@@ -232,13 +232,14 @@ test('node validation uses world size and per-node GPU ask', async t => {
   assert.equal(d.calls[0].body.gpu_count, 4)
 })
 
-test('close and reopen ignores an old compile and clears rows and focus', async t => {
+test('explicit discard ignores an old compile and clears rows and focus', async t => {
   const compile = deferred()
   const d = setup(t, { post: () => compile.promise })
   inputCommand(d)
   d.commandFocused.value = true
   d.focusedPane.value = 'args'
   const pending = d.submit()
+  d.discardDraft()
   d.open.value = false
   d.open.value = true
   compile.resolve({ data: { image: 'late:image', engine_args: { tp: 16 } } })
@@ -255,6 +256,7 @@ test('late submission success or error cannot close or poison a reopened draft',
     const response = deferred()
     const d = setup(t, { post: () => response.promise })
     const pending = d.submit()
+    d.discardDraft()
     d.open.value = false
     d.open.value = true
     if (fail) response.reject(new Error('late outage'))
@@ -360,4 +362,56 @@ test('server field validation opens the corresponding settings without marking s
   assert.equal(d.validationTarget.value, 'env')
   assert.deepEqual(d.advanced.value, ['launch'])
   assert.equal(d.uncertain.value, false)
+})
+
+
+test('draft changes survive reopening only in the same track and explicit discard resets them', async t => {
+  const d = setup(t, { track: track() })
+  assert.equal(d.dirty.value, false)
+  d.form.value.name = 'My draft'
+  assert.equal(d.dirty.value, true)
+  d.open.value = false
+  d.open.value = true
+  assert.equal(d.form.value.name, 'My draft')
+  d.discardDraft()
+  assert.equal(d.form.value.name, '')
+  assert.equal(d.dirty.value, false)
+  d.form.value.name = 'Other draft'
+  d.open.value = false
+  d.trackRef.value = { ...track(), id: 99, slug: 'different' }
+  d.open.value = true
+  assert.equal(d.form.value.name, '')
+})
+
+test('reopening a command draft still compiles before sending and success clears it', async t => {
+  const d = setup(t)
+  inputCommand(d)
+  d.open.value = false
+  d.open.value = true
+  await d.submit()
+  assert.match(d.calls[0].url, /\/parse$/)
+  assert.equal(d.calls.at(-1).body.engine_args.tp, '8')
+  d.open.value = true
+  assert.equal(d.form.value.command, '')
+  assert.equal(d.dirty.value, false)
+})
+
+
+test('closing and reopening cannot clear an unconfirmed submission outcome', async t => {
+  const d = setup(t, { post: async () => { throw new Error('lost response') } })
+  await d.submit()
+  d.open.value = false
+  d.open.value = true
+  assert.equal(d.uncertain.value, true)
+  await d.submit()
+  assert.equal(d.calls.length, 1)
+})
+
+test('a prefilled version with a different verified engine starts clean', async t => {
+  const d = setup(t, { track: { ...track(), images: [
+    { image: 'sglang:image', engine: 'sglang' }, { image: 'vllm:image', engine: 'vllm' },
+  ] }, resubmitOf: entry({ image: 'vllm:image', engine: 'vllm' }) })
+  await flush()
+  assert.equal(d.form.value.engine, 'vllm')
+  assert.equal(d.dirty.value, false)
 })

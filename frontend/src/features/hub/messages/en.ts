@@ -398,6 +398,9 @@ export default {
     },
     "setReference": "Set as reference",
     "submit": {
+      "failed": "Submission failed",
+      "parseFailed": "Could not parse the command. Check its syntax.",
+      "unconfirmedResponse": "Submission response is unconfirmed. Refresh entries before trying again to avoid duplicate tasks.",
       "launchGroup": "Parameters and environment",
       "publishingGroup": "Attribution and notes",
       "configuredCount": "{n} configured",

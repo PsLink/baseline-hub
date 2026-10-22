@@ -15,8 +15,9 @@
  *  an entry into its next version is the entry page's job.
  */
 import { CopyDocument } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { onBeforeRouteLeave } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { api, apiErrorText, ConfigChips, InfoHint, useI18n } from '@/plugins/api'
 import type { BaselineSubmission, BaselineTrack, FlagSpec } from '../types'
 import { useSubmissionDraft } from '../composables/useSubmissionDraft'
@@ -42,7 +43,7 @@ const open = computed({
 const track = computed(() => props.track ?? null)
 const resubmitOf = computed(() => props.resubmitOf ?? null)
 const {
-  contestBoard, hasSavedToken, publishedAs, advanced, asJson,
+  dirty, discardDraft, contestBoard, hasSavedToken, publishedAs, advanced, asJson,
   busy, uncertain, validationTarget, validationMessage, validationRevision, revealValidation, parsing, parseReport, trackReport, form,
   argRows, envRows, volRows, jsonBad, commandFocused, focusedPane,
   cardsFromRows, supportsNodes, nodeCount, perNodeCards, nodesBad, parsedArgs,
@@ -55,6 +56,51 @@ const {
   api, t, notify: ElMessage, errorText: apiErrorText,
   onSubmitted: (id) => emit('submitted', id),
 })
+
+const text = (zh: string, en: string) => locale.value === 'zh' ? zh : en
+async function requestClose(done?: () => void) {
+  if (busy.value) return
+  if (dirty.value) {
+    try {
+      await ElMessageBox.confirm(text('配置草稿将保留在当前页面，离开页面后会丢失。', 'Your draft stays on this page until you leave.'),
+        text('关闭配置编辑？', 'Close configuration editor?'), {
+          confirmButtonText: text('保留草稿并关闭', 'Keep draft and close'),
+          cancelButtonText: text('继续编辑', 'Keep editing'), type: 'warning',
+        })
+    } catch { return }
+  }
+  if (done) done()
+  else open.value = false
+}
+async function discardAndClose() {
+  if (busy.value || uncertain.value) return
+  try {
+    await ElMessageBox.confirm(text('放弃当前配置的所有修改？', 'Discard all changes to this configuration?'),
+      text('放弃草稿', 'Discard draft'), {
+        confirmButtonText: text('放弃修改', 'Discard changes'), cancelButtonText: text('继续编辑', 'Keep editing'), type: 'warning',
+      })
+  } catch { return }
+  discardDraft()
+  open.value = false
+}
+onBeforeRouteLeave(async () => {
+  if (busy.value) return false
+  if (!dirty.value) return true
+  try {
+    await ElMessageBox.confirm(text('离开页面会丢失配置草稿。', 'Leaving this page will discard your configuration draft.'),
+      text('离开页面？', 'Leave page?'), {
+        confirmButtonText: text('放弃修改并离开', 'Discard and leave'), cancelButtonText: text('继续编辑', 'Keep editing'), type: 'warning',
+      })
+    return true
+  } catch { return false }
+})
+function guardUnload(event: BeforeUnloadEvent) {
+  if (!dirty.value && !busy.value) return
+  event.preventDefault()
+  event.returnValue = ''
+}
+onMounted(() => window.addEventListener?.('beforeunload', guardUnload))
+onBeforeUnmount(() => window.removeEventListener?.('beforeunload', guardUnload))
 
 const parsedKeys = computed(() => Object.keys(parsedArgs.value))
 const extrasLine = computed(() => {
@@ -152,11 +198,11 @@ const title = computed(() => {
 </script>
 
 <template>
-  <el-dialog v-model="open" :title="title" width="860px" top="4vh" class="hub-dialog">
+  <el-dialog v-model="open" :title="title" width="860px" top="4vh" class="hub-dialog" :before-close="requestClose" :close-on-click-modal="false">
     <div ref="dialogBody" class="submission-content">
     <el-alert v-if="uncertain" type="warning" :closable="false" show-icon
-      title="提交结果尚未确认，请先核查赛道提交记录。">
-      <el-button text @click="uncertain = false">已核查记录，允许再次提交</el-button>
+      :title="text('提交结果尚未确认，请先核查赛道提交记录。', 'Submission outcome is unconfirmed. Check track entries first.')">
+      <el-button text @click="uncertain = false">{{ text('已核查记录，允许再次提交', 'I checked the entries; allow another submission') }}</el-button>
     </el-alert>
     <el-alert v-if="validationMessage" :title="validationMessage" type="error" :closable="false" show-icon class="validation-message" />
     <div class="head-row">
@@ -196,8 +242,8 @@ const title = computed(() => {
           <div v-if="trackReport && !trackReport.image_verified" class="warn tiny">
             ⚠ {{ t('baselineHub.submit.notVerified') }}
             <template v-if="trackReport.image_suggestion">
-              — <a class="link" @click="useSuggestedImage">{{
-                t('baselineHub.submit.useSuggested', { image: trackReport.image_suggestion }) }}</a>
+              — <button type="button" class="link suggestion-button" @click="useSuggestedImage">{{
+                t('baselineHub.submit.useSuggested', { image: trackReport.image_suggestion }) }}</button>
             </template>
           </div>
         </el-form-item>
@@ -525,7 +571,8 @@ const title = computed(() => {
     <template #footer>
       <div class="submit-footer">
       <span class="submit-summary">{{ cardsFromRows }} × {{ track?.gpu_type || form.gpu_type || 'GPU' }}</span>
-      <el-button :disabled="busy" @click="open = false">{{ t('common.cancel') }}</el-button>
+      <el-button v-if="dirty" text :disabled="busy || uncertain" @click="discardAndClose">{{ text('放弃草稿', 'Discard draft') }}</el-button>
+      <el-button :disabled="busy" @click="requestClose()">{{ t('common.close') }}</el-button>
       <el-button type="primary" :loading="busy" :disabled="uncertain" @click="submitWithValidation">
         {{ resubmitOf ? t('baselineHub.submit.submitAsVersion', { n: resubmitOf.version + 1 })
           : track ? t('baselineHub.enterTrack') : t('baselineHub.submit.submit') }}
@@ -536,6 +583,7 @@ const title = computed(() => {
 </template>
 
 <style scoped>
+.suggestion-button { border: 0; background: none; padding: 0; font: inherit; color: var(--el-color-primary); cursor: pointer; }
 .group-count { color: var(--autotune-muted); font-size: 13px; font-weight: 400; margin-left: 12px; }
 .validation-message { margin-bottom: 16px; }
 .submission-content { min-width: 0; }

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { rememberedPage } from '../composables/pageState'
+const reportsUrl = rememberedPage('/reports')
 /** One saved report, rendered by the same renderer the HTML export carries
  *  (src/report/): the agent's markdown with its chart/table/command blocks
  *  drawn live from the comparison frozen with the report. Older reports with
@@ -138,7 +140,7 @@ onBeforeUnmount(cleanup)
   <div class="page report-page">
     <div class="header-row">
       <div>
-        <router-link to="/reports" class="muted tiny">← {{ t('reports.back') }}</router-link>
+        <router-link :to="reportsUrl" class="muted tiny">← {{ t('reports.back') }}</router-link>
 
       </div>
       <div v-if="report" class="actions">

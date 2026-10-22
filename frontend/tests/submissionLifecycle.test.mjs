@@ -9,7 +9,9 @@ import { useSubmissionDraft } from '../src/features/hub/composables/useSubmissio
 
 const flush = () => new Promise(resolve => setImmediate(resolve))
 
-async function mountDialog(t, options = {}) {
+async function mountDialog(t, options = {}, behavior = {}) {
+  let leaveGuard
+  const confirmations = []
   const calls = [], events = []
   const source = readFileSync(new URL('../src/features/hub/components/BaselineSubmitDialog.vue', import.meta.url), 'utf8')
   const { descriptor } = parse(source)
@@ -22,7 +24,8 @@ async function mountDialog(t, options = {}) {
   const modules = {
     vue,
     '@element-plus/icons-vue': { CopyDocument: {} },
-    'element-plus': { ElMessage: { error() {}, warning() {} } },
+    'vue-router': { onBeforeRouteLeave(guard) { leaveGuard = guard } },
+    'element-plus': { ElMessageBox: { confirm: async (...args) => { confirmations.push(args); if (behavior.reject) throw new Error('cancel') } }, ElMessage: { error() {}, warning() {} } },
     '@/plugins/api': {
       api: { get: async () => ({ data: [] }), post: async (url, body) => {
         calls.push({ url, body }); return { data: { id: 23 } }
@@ -49,10 +52,10 @@ async function mountDialog(t, options = {}) {
   })
   app.mount({})
   t.after(() => { app.unmount(); globalThis.window = originalWindow })
-  return { state: app._instance.setupState, props: app._instance.props, calls, events }
+  return { state: app._instance.setupState, props: app._instance.props, calls, events, confirmations, leave: () => leaveGuard() }
 }
 
-test('dialog wrapper starts a fresh draft after closing and reopening', async t => {
+test('dialog wrapper preserves a modified draft after closing and reopening', async t => {
   const { state, props } = await mountDialog(t)
   props.modelValue = true
   await flush()
@@ -62,8 +65,9 @@ test('dialog wrapper starts a fresh draft after closing and reopening', async t 
   await flush()
   props.modelValue = true
   await flush()
-  assert.equal(state.argRows.length, 0)
-  assert.equal(state.form.command, '')
+  assert.equal(state.argRows.length, 1)
+  assert.match(state.form.command, /--tp 8/)
+  assert.equal(state.dirty, true)
 })
 
 
@@ -83,4 +87,47 @@ test('dialog wrapper initializes mounted-open props and wires submission events'
   assert.equal(calls[0].url, '/baseline-hub/submissions/9/resubmit')
   assert.equal(calls[0].body.engine_args.tp, '2')
   assert.deepEqual(events, [['update:modelValue', false], ['submitted', 23]])
+})
+
+
+test('close confirmation preserves editing on cancel and retains the draft on acceptance', async t => {
+  const behavior = { reject: true }
+  const { state, props, events, confirmations } = await mountDialog(t, {}, behavior)
+  // Evaluate while closed, as the real template does, before opening it.
+  assert.equal(state.dirty, false)
+  props.modelValue = true
+  await flush()
+  state.form.name = 'Unfinished'
+  assert.equal(state.dirty, true)
+  await state.requestClose()
+  assert.equal(events.length, 0)
+  behavior.reject = false
+  await state.requestClose()
+  assert.deepEqual(events, [['update:modelValue', false]])
+  assert.equal(confirmations.length, 2)
+  assert.equal(state.form.name, 'Unfinished')
+})
+
+test('route guard handles retained drafts, busy requests and successful submissions', async t => {
+  const behavior = { reject: true }
+  const { state, leave } = await mountDialog(t, { modelValue: true }, behavior)
+  assert.equal(await leave(), true)
+  state.form.name = 'Draft'
+  assert.equal(await leave(), false)
+  behavior.reject = false
+  assert.equal(await leave(), true)
+  state.busy = true
+  assert.equal(await leave(), false)
+  state.busy = false
+  await state.submit()
+  assert.equal(await leave(), true)
+})
+
+test('explicit discard asks for confirmation and clears the draft', async t => {
+  const { state, events } = await mountDialog(t, { modelValue: true })
+  state.form.name = 'Draft'
+  await state.discardAndClose()
+  assert.equal(state.dirty, false)
+  assert.equal(state.form.name, '')
+  assert.deepEqual(events, [['update:modelValue', false]])
 })

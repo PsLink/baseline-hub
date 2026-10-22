@@ -10,13 +10,19 @@
   --el-color-primary-light-7: #b5d9d6;
   --el-color-primary-light-8: #cee5e3;
   --el-color-primary-light-9: #e7f2f1;
-  --autotune-bg: #f6f8fa;
-  --autotune-text: #24333b;
-  --autotune-muted: #5f707a;
+  --autotune-bg: #f4f7f8;
+  --autotune-text: #20343c;
+  --autotune-muted: #61747d;
   --autotune-border: #dde5e9;
   --el-border-color: #dde5e9;
+  --el-fill-color-blank: #ffffff;
+  --el-text-color-regular: #435b66;
+  --el-text-color-secondary: #61747d;
+  --el-font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   --el-font-size-base: 14px;
-  --el-border-radius-base: 6px;
+  --hub-font-body: 14px;
+  --hub-font-meta: 12px;
+  --el-border-radius-base: 8px;
   --el-text-color-primary: #24333b;
 }
 
@@ -24,7 +30,8 @@ body {
   margin: 0;
   background: var(--autotune-bg);
   color: var(--autotune-text);
-  font-family: 'IBM Plex Sans', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-family: var(--el-font-family);
+  -webkit-font-smoothing: antialiased;
   font-size: 14px;
   line-height: 1.6;
 }
@@ -32,11 +39,11 @@ body {
 .page {
   max-width: 1280px;
   margin: 0 auto;
-  padding: 32px;
+  padding: 32px 32px 56px;
 }
 
 .page-title {
-  font-size: 26px;
+  font-size: 30px;
   font-weight: 600;
   line-height: 1.3;
   letter-spacing: -.025em;
@@ -45,12 +52,12 @@ body {
 
 .muted {
   color: var(--autotune-muted);
-  font-size: 13px;
+  font-size: var(--hub-font-body);
 }
 
 .mono {
   font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Consolas, monospace;
-  font-size: 12px;
+  font-size: var(--hub-font-meta);
 }
 
 /* A campaign that was never started. Element Plus has no tag colour between
@@ -74,13 +81,29 @@ a.nav-link {
 
 /* Quiet surfaces keep the benchmark results at the centre of the workspace. */
 
-.el-table { font-variant-numeric: tabular-nums; --el-table-header-bg-color: #f6f8fa; --el-table-row-hover-bg-color: #f0f7f6; }
+.el-table { font-variant-numeric: tabular-nums; --el-table-header-bg-color: #eef3f5; --el-table-row-hover-bg-color: #f0f8f7; --el-table-border-color: #e6edef; border: 1px solid var(--autotune-border); border-radius: 12px; overflow: hidden; }
+.el-table th.el-table__cell { height: 48px; }
+.el-table .cell { padding-left: 18px; padding-right: 18px; }
+.el-table__inner-wrapper::before { display: none; }
+.el-table .el-table__row:last-child td.el-table__cell { border-bottom: 0; }
 .el-table .cell { line-height: 1.6; }
 .el-table th.el-table__cell { font-weight: 500; color: var(--autotune-muted); }
 .el-table td.el-table__cell { padding-top: 14px; padding-bottom: 14px; }
-.el-card { --el-card-padding: 20px; border-radius: 8px; box-shadow: none !important; }
+.el-card { --el-card-padding: 24px; border-radius: 12px; box-shadow: none !important; }
 .el-card__header { border-bottom-color: var(--autotune-border); }
-.el-button { font-weight: 500; }
+.el-button { font-weight: 500; min-height: 36px; }
+.el-button--small { min-height: 28px; }
+.el-button--primary:not(.is-text):not(.is-link):not(.is-plain) { box-shadow: 0 2px 3px rgb(8 127 120 / 12%); }
+.el-input__wrapper, .el-select__wrapper { min-height: 38px; }
+.el-radio-button__inner { min-height: 30px; display: inline-flex; align-items: center; }
+.el-tag { border-radius: 5px; }
+.el-tabs__nav-wrap::after { height: 1px; background: var(--autotune-border); }
+.el-tabs__active-bar { height: 3px; border-radius: 3px; }
+.el-dialog { border-radius: 16px; box-shadow: 0 24px 80px rgb(26 49 57 / 18%); }
+.el-dialog__header { padding-bottom: 20px; }
+.el-dialog__title { font-weight: 600; }
+.el-dropdown-menu { padding: 6px; }
+.el-dropdown-menu__item { border-radius: 5px; }
 .el-tabs__item { font-weight: 500; }
 .disclosure { background: white; border: 1px solid var(--autotune-border); border-radius: 8px; padding: 14px 18px; }
 .disclosure > summary { cursor: pointer; font-size: 14px; font-weight: 500; color: var(--autotune-text); }
@@ -101,6 +124,10 @@ a.nav-link {
 
 /* Keep the submit action available while advanced settings scroll. */
 .hub-dialog { display: flex; flex-direction: column; max-height: 92dvh; margin-bottom: 4vh; }
-.hub-dialog .el-dialog__body { overflow-y: auto; min-height: 0; }
+.hub-dialog .el-dialog__body { overflow-y: auto; overscroll-behavior: contain; min-height: 0; }
 .hub-dialog .el-dialog__header, .hub-dialog .el-dialog__footer { flex-shrink: 0; }
 .hub-dialog .el-dialog__footer { border-top: 1px solid var(--autotune-border); padding-top: 16px; }
+
+/* Keep prose readable; IDs and commands retain compact monospace sizing. */
+.page-title { overflow-wrap: anywhere; text-wrap: balance; }
+.disclosure-body { font-size: var(--hub-font-body); }

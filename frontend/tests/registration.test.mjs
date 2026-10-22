@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
 import ts from 'typescript'
 
-function setup() {
+function setup(locale = 'zh') {
   const vue = readFileSync(new URL('../src/Login.vue', import.meta.url), 'utf8')
   const script = vue.match(/<script setup lang="ts">([\s\S]*?)<\/script>/)[1]
     .replace(/^import .*$/gm, '')
@@ -12,6 +12,7 @@ function setup() {
   let session
   const context = vm.createContext({
     ref: value => ({ value }),
+    useI18n: () => ({ locale: { value: locale } }),
     onMounted: () => {},
     useRoute: () => ({ query: {} }),
     useRouter: () => ({ push: async path => redirects.push(path) }),
@@ -55,4 +56,15 @@ test('register and login select their endpoints and establish a session', async 
     assert.equal(form.password.value, '')
     assert.equal(form.busy.value, false)
   }
+})
+
+
+test('English registration reports mismatched passwords in English', async () => {
+  const { form, calls } = setup('en')
+  form.switchMode()
+  form.password.value = 'secret123'
+  form.confirmation.value = 'different'
+  await form.submit()
+  assert.equal(calls.length, 0)
+  assert.equal(form.error.value, 'The passwords do not match')
 })

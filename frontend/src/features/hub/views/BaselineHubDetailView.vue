@@ -8,6 +8,8 @@
  *  × concurrency (see `sweepOf`), and dumped flat it is two hundred rows
  *  nobody can read a deployment decision off.
  */
+import { rememberedPage } from '@/platform/composables/pageState'
+import { statusLabel, metricLabel } from '@/platform/i18n/display'
 import { inLineLabel } from '../utils/queue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { computed, onMounted, ref } from 'vue'
@@ -27,7 +29,8 @@ import { exactTime, relativeTime } from '@/plugins/api'
 
 const route = useRoute()
 const router = useRouter()
-const { t } = useI18n()
+const { t, locale } = useI18n()
+const text = (zh: string, en: string) => locale.value === 'zh' ? zh : en
 const auth = useAuthStore()
 const isAdmin = computed(() => auth.user?.role === 'admin')
 /** Its place in the machine queue and who is ahead, for a queued entry. */
@@ -131,15 +134,15 @@ function reports(m: BaselineMeasurement): ModuleReport[] {
 }
 
 function boundText(b: BoundRow): string {
-  if (b.min != null && b.max != null) return `${b.min} ≤ ${b.metric} ≤ ${b.max}`
-  if (b.max != null) return `${b.metric} ≤ ${b.max}`
-  return `${b.metric} ≥ ${b.min}`
+  if (b.min != null && b.max != null) return `${b.min} ≤ ${metricLabel(b.metric, locale.value)} ≤ ${b.max}`
+  if (b.max != null) return `${metricLabel(b.metric, locale.value)} ≤ ${b.max}`
+  return `${metricLabel(b.metric, locale.value)} ≥ ${b.min}`
 }
 
 function boundLook(b: BoundRow): { type: 'success' | 'danger' | 'info'; label: string } {
-  if (b.ok === true) return { type: 'success', label: 'held' }
-  if (b.ok === false) return { type: 'danger', label: 'crossed' }
-  return { type: 'info', label: 'not measured' }
+  if (b.ok === true) return { type: 'success', label: t('baselineHub.detail.held') }
+  if (b.ok === false) return { type: 'danger', label: t('baselineHub.detail.crossed') }
+  return { type: 'info', label: text('未测量', 'Not measured') }
 }
 
 /** Metrics grouped by module (`<module>.<metric>`) — a benchmark can run
@@ -478,22 +481,22 @@ onMounted(async () => {
 
 <template>
   <div v-if="sub" class="page">
-    <BackLink :to="sub.track_slug ? `/baseline-hub/tracks/${sub.track_slug}` : '/baseline-hub'"
+    <BackLink :to="rememberedPage(sub.track_slug ? `/baseline-hub/tracks/${sub.track_slug}` : '/baseline-hub')"
       :label="sub.track_slug ? t('baselineHub.backToTrack') : t('baselineHub.back')" />
     <div class="header-row">
       <div>
         <h1 class="page-title">
           {{ sub.name }}
           <el-tag v-if="sub.version > 1" effect="plain" class="version">v{{ sub.version }}</el-tag>
-          <el-tag :type="statusType(sub.status)" class="version">{{ sub.status }}</el-tag>
+          <el-tag :type="statusType(sub.status)" class="version">{{ statusLabel(sub.status, locale) }}</el-tag>
         </h1>
         <span class="muted">
           {{ sub.served_model_name }} · {{ sub.engine }} ·
           {{ sub.gpu_count }}×{{ sub.gpu_type || 'any' }}
           <template v-if="sub.precision"> · {{ sub.precision }}</template>
-          · submitted {{ relativeTime(sub.created_at) }} by {{ sub.created_by_name }}
+          · {{ text('提交于', 'Submitted') }} {{ relativeTime(sub.created_at) }} · {{ sub.created_by_name }}
           <template v-if="sub.track_slug">
-            · track <router-link class="link nav-link" :to="`/baseline-hub/tracks/${sub.track_slug}`">
+            · {{ text('赛道', 'Track') }} <router-link class="link nav-link" :to="`/baseline-hub/tracks/${sub.track_slug}`">
               {{ sub.track_slug }}</router-link>
           </template>
         </span>
@@ -523,7 +526,7 @@ onMounted(async () => {
     </div>
 
     <el-alert v-if="sub.status === 'failed'" type="error" :closable="false" class="block">
-      <b>{{ sub.failure_class || 'failed' }}</b> — {{ sub.error || 'no detail recorded' }}
+      <b>{{ sub.failure_class || 'failed' }}</b> — {{ sub.error || text('未记录详细错误', 'No error details recorded') }}
     </el-alert>
 
     <el-alert v-if="queueNote" type="warning" :closable="false" show-icon class="queue-note">
@@ -534,8 +537,8 @@ onMounted(async () => {
 
     <p v-if="live && !(sub.measurements ?? []).length" class="muted empty">
       {{ sub.status === 'queued'
-        ? 'Waiting for a free machine matching the hardware ask…'
-        : 'Running — the measurement appears here when the benchmark finishes.' }}
+        ? text('正在等待符合硬件要求的空闲机器…', 'Waiting for an available machine matching the hardware requirements…')
+        : text('正在运行，评测结束后将在此显示结果。', 'Running. Results will appear here when the benchmark finishes.') }}
       <span v-if="queueLine" class="queue-line">{{ queueLine }}</span>
     </p>
 
@@ -549,9 +552,9 @@ onMounted(async () => {
           <el-tag v-else-if="m.passed" type="success" size="small" effect="plain">
             {{ t('baselineHub.detail.passed') }}</el-tag>
           <span class="muted tiny" :title="exactTime(m.measured_at)">
-            {{ relativeTime(m.measured_at) }} on {{ m.machine_name }}
+            {{ relativeTime(m.measured_at) }} · {{ m.machine_name }}
             <template v-if="m.engine_version"> · {{ m.engine }} {{ m.engine_version }}</template>
-            <template v-if="m.dataset_build_id"> · dataset {{ m.dataset_build_id }}</template>
+            <template v-if="m.dataset_build_id"> · {{ text('数据集', 'Dataset') }} {{ m.dataset_build_id }}</template>
           </span>
           <span class="spacer" />
           <a v-if="m.llmbench_url" :href="m.llmbench_url" target="_blank"
@@ -567,9 +570,9 @@ onMounted(async () => {
       <div class="score-row">
         <div class="hero">
           <div class="hero-num mono">{{ fmtMetric(heroValue(m)) }}</div>
-          <div class="hero-label mono">{{ m.target_metric || 'benchmark score' }}</div>
+          <div class="hero-label" :title="m.target_metric">{{ metricLabel(m.target_metric, locale) }}</div>
           <div v-if="m.target_metric && m.score != null" class="muted tiny">
-            benchmark score {{ fmtMetric(m.score) }}
+            {{ text('评测分数', 'Benchmark score') }} {{ fmtMetric(m.score) }}
           </div>
         </div>
         <div class="redlines">
@@ -578,24 +581,24 @@ onMounted(async () => {
               <div class="module-verdict">
                 <b class="mono tiny">{{ report.module }}</b>
                 <span v-if="scenarioOf(report)" class="muted tiny">{{ scenarioOf(report) }}</span>
-                <el-tag v-if="report.passed === false" type="danger" size="small">failed</el-tag>
+                <el-tag v-if="report.passed === false" type="danger" size="small">{{ statusLabel('failed', locale) }}</el-tag>
                 <el-tag v-else-if="report.passed" type="success" size="small"
-                  effect="plain">passed</el-tag>
+                  effect="plain">{{ statusLabel('passed', locale) }}</el-tag>
                 <span v-if="report.score != null" class="muted tiny">
-                  score {{ fmtMetric(report.score) }}</span>
+                  {{ text('分数', 'Score') }} {{ fmtMetric(report.score) }}</span>
               </div>
               <div v-if="report.error" class="crossed-val tiny">{{ report.error }}</div>
               <div v-for="b in report.bounds" :key="b.role + b.metric" class="redline"
                 :class="b.role === 'display' ? 'display-bound' : ''">
                 <el-tag :type="boundLook(b).type" size="small" effect="plain">
                   {{ boundLook(b).label }}</el-tag>
-                <span class="mono tiny">{{ boundText(b) }}</span>
+                <span class="mono tiny" :title="b.metric">{{ boundText(b) }}</span>
                 <span class="mono tiny" :class="b.ok === false ? 'crossed-val' : ''">
-                  measured {{ fmtMetric(b.actual) }}</span>
-                <span v-if="b.role === 'display'" class="muted tiny">display — does not gate</span>
+                  {{ text('实测', 'Measured') }} {{ fmtMetric(b.actual) }}</span>
+                <span v-if="b.role === 'display'" class="muted tiny">{{ text('仅展示，不影响通过判定', 'Display only; does not affect the verdict') }}</span>
               </div>
               <span v-if="!report.bounds.length" class="muted tiny">
-                no redlines on this module
+                {{ text('此模块未设置阈值', 'No thresholds configured for this module') }}
               </span>
             </div>
           </template>
@@ -610,41 +613,41 @@ onMounted(async () => {
         <div class="sweep-head">
           <b>{{ sweeps.get(m.id)!.title }}</b>
           <span class="muted tiny">
-            {{ m.gpu_count }}×{{ m.gpu_type || 'GPU' }} per instance ·
-            per-machine TPM normalized to {{ CARD_NORM_BASELINE }} cards
+            {{ m.gpu_count }}×{{ m.gpu_type || 'GPU' }} {{ text('每实例', 'per instance') }} ·
+            {{ text('单机 TPM 归一化至', 'Per-machine TPM normalized to') }} {{ CARD_NORM_BASELINE }} {{ text('卡', 'cards') }}
             {{ sweeps.get(m.id)!.scaleSource === 'benchmark'
-              ? "(the benchmark's own factor)" : '(from the cards this run held)' }}
+              ? text('（使用评测归一化系数）', '(benchmark normalization factor)') : text('（根据本次运行卡数）', '(from the cards this run held)') }}
           </span>
         </div>
         <el-table :data="sweeps.get(m.id)!.rows" size="small" :span-method="sweepSpan"
           :row-class-name="sweepRowClass" class="sweep-table">
-          <el-table-column label="Scenario (in + out)" width="150">
+          <el-table-column :label="text('场景（输入 + 输出）', 'Scenario (in + out)')" width="150">
             <template #default="{ row }">
               <span class="mono scenario">{{ row.scenario }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="Concurrency" width="150" align="right">
+          <el-table-column :label="text('并发数', 'Concurrency')" width="150" align="right">
             <template #default="{ row }">
               <span class="mono" :class="row.meetsSlo === false ? 'slo-miss' : ''"
-                :title="row.meetsSlo === false ? 'did not meet the sweep\'s SLO' : ''">
+                :title="row.meetsSlo === false ? text('未满足此场景的 SLO', 'Did not meet the scenario SLO') : ''">
                 {{ row.concurrency }}</span>
               <el-tag v-if="row.reported" size="small" effect="plain" class="level-tag">
-                reported</el-tag>
-              <span v-else-if="row.probe" class="muted tiny level-tag">probe</span>
+                {{ text('计分档位', 'Reported') }}</el-tag>
+              <span v-else-if="row.probe" class="muted tiny level-tag">{{ text('探索档位', 'Probe') }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="Input tok/s" min-width="110" align="right">
+          <el-table-column :label="text('输入速度（tok/s）', 'Input tok/s')" min-width="110" align="right">
             <template #default="{ row }"><span class="mono">{{ fmtInt(row.inputTps) }}</span></template>
           </el-table-column>
-          <el-table-column label="Output tok/s" min-width="110" align="right">
+          <el-table-column :label="text('输出速度（tok/s）', 'Output tok/s')" min-width="110" align="right">
             <template #default="{ row }"><span class="mono">{{ fmtInt(row.outputTps) }}</span></template>
           </el-table-column>
-          <el-table-column label="Per-request out tok/s" min-width="150" align="right">
+          <el-table-column :label="text('单请求输出（tok/s）', 'Per-request out tok/s')" min-width="150" align="right">
             <template #default="{ row }">
               <span class="mono">{{ fmt1(row.requestOutputTps) }}</span>
             </template>
           </el-table-column>
-          <el-table-column :label="`Per-machine TPM (${CARD_NORM_BASELINE} cards)`"
+          <el-table-column :label="text(`单机 TPM（${CARD_NORM_BASELINE} 卡）`, `Per-machine TPM (${CARD_NORM_BASELINE} cards)`)"
             min-width="170" align="right">
             <template #default="{ row }"><span class="mono tpm">{{ fmtInt(row.tpm) }}</span></template>
           </el-table-column>
@@ -722,16 +725,16 @@ onMounted(async () => {
             <div class="module-head">
               <b class="mono">{{ group.module }}</b>
               <span v-if="group.score != null" class="muted tiny">
-                module score {{ fmtMetric(group.score) }}</span>
+                {{ text('模块分数', 'Module score') }} {{ fmtMetric(group.score) }}</span>
             </div>
             <el-table :data="group.rows" size="small" max-height="320">
-              <el-table-column label="Metric" min-width="260">
+              <el-table-column :label="text('指标', 'Metric')" min-width="260">
                 <template #default="{ row }">
                   <span class="mono" :class="row[0] === m.target_metric ? 'target' : ''">
                     {{ row[0] }}</span>
                 </template>
               </el-table-column>
-              <el-table-column label="Value" width="150" align="right">
+              <el-table-column :label="text('数值', 'Value')" width="150" align="right">
                 <template #default="{ row }">
                   <span class="mono">{{ fmtMetric(row[1]) }}</span>
                 </template>
@@ -767,7 +770,7 @@ onMounted(async () => {
           <span>{{ sub.machine_name }}</span></div>
         <div v-if="sub.campaign_id"><span class="muted">{{ t('baselineHub.detail.campaign') }}</span>
           <span class="mono">#{{ sub.campaign_id }}</span>
-          <span v-if="sub.campaign_status" class="muted"> · {{ sub.campaign_status }}</span></div>
+          <span v-if="sub.campaign_status" class="muted"> · {{ statusLabel(sub.campaign_status, locale) }}</span></div>
       </div>
       <FlagChips class="args-block" :args="sub.engine_args"
         :known="knownNames" />
@@ -776,10 +779,10 @@ onMounted(async () => {
         <pre class="mono args">{{ JSON.stringify(sub.engine_args, null, 2) }}</pre>
       </details>
       <div v-if="Object.keys(sub.extra_env ?? {}).length" class="muted tiny">
-        env: <span class="mono">{{ JSON.stringify(sub.extra_env) }}</span>
+        {{ text('环境变量', 'Environment') }}: <span class="mono">{{ JSON.stringify(sub.extra_env) }}</span>
       </div>
       <div v-if="Object.keys(sub.extra_volumes ?? {}).length" class="muted tiny">
-        volumes: <span class="mono">{{ JSON.stringify(sub.extra_volumes) }}</span>
+        {{ text('挂载', 'Volumes') }}: <span class="mono">{{ JSON.stringify(sub.extra_volumes) }}</span>
       </div>
       <div v-if="sub.notes" class="muted tiny">{{ sub.notes }}</div>
       </div>
@@ -795,7 +798,7 @@ onMounted(async () => {
         <div class="measure-head">
           <b>{{ t('baselineHub.detail.runs') }}</b>
           <span v-if="sub.status === 'running' && sub.run_status" class="muted tiny">
-            {{ sub.run_status }}<template v-if="sub.run_id"> · run #{{ sub.run_id }}</template>
+            {{ statusLabel(sub.run_status, locale) }}<template v-if="sub.run_id"> · run #{{ sub.run_id }}</template>
           </span>
         </div>
       </div>

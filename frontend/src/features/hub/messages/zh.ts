@@ -398,6 +398,9 @@ export default {
     },
     "setReference": "设为参考",
     "submit": {
+      "failed": "提交失败",
+      "parseFailed": "无法解析该命令，请检查命令格式。",
+      "unconfirmedResponse": "提交响应未确认，请先刷新提交记录核查，避免重复创建任务。",
       "launchGroup": "参数与环境",
       "publishingGroup": "署名与备注",
       "configuredCount": "已配置 {n} 项",
